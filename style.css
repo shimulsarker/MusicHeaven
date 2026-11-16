@@ -1165,7 +1165,8 @@
       border-radius: 16px;
       background: #202020;
       box-shadow: 0 24px 70px rgba(0,0,0,.4);
-      object-fit: cover;
+      background-position: center;
+      background-size: cover;
     }
     .now-playing-meta { width: min(100%, 390px); }
     .now-playing-meta h1 { overflow: hidden; margin: 0; font-size: clamp(22px, 3vw, 34px); font-weight: 720; letter-spacing: -.045em; text-overflow: ellipsis; white-space: nowrap; }
@@ -1354,4 +1355,60 @@
     @media (max-width: 560px) {
       .now-playing-meta h1 { font-size: 1.5rem; }
       .settings-category { font-size: .75rem; }
+    }
+
+    .no-artwork {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      background-color: #111820;
+      background-image: radial-gradient(circle at 50% 42%, rgba(62,166,255,.32), transparent 42%),
+        linear-gradient(145deg, #1a3442, #121820 58%, #241b32);
+    }
+    .no-artwork::before {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 52%;
+      aspect-ratio: 1;
+      border: 1px solid rgba(196,235,255,.28);
+      border-radius: 50%;
+      box-shadow: 0 0 32px rgba(62,166,255,.2), inset 0 0 26px rgba(62,166,255,.12);
+      content: "";
+      transform: translate(-50%, -50%);
+    }
+    .no-artwork::after {
+      position: absolute;
+      z-index: 1;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: rgba(235,247,255,.9);
+      content: "MUSIC\A HEAVEN";
+      font-size: 7px;
+      font-weight: 800;
+      letter-spacing: .16em;
+      line-height: 1.45;
+      text-align: center;
+      text-shadow: 0 2px 12px rgba(0,0,0,.8);
+      white-space: pre;
+    }
+    .no-artwork > svg { display: none; }
+    .featured-art.no-artwork .art-glow,
+    .featured-art.no-artwork .art-monogram { display: none; }
+    .now-playing-art.no-artwork::after,
+    .featured-art.no-artwork::after { font-size: clamp(15px, 2vw, 22px); }
+    .cover.no-artwork::after,
+    .player-art.no-artwork::after { font-size: 5px; letter-spacing: .1em; }
+    .library-empty {
+      padding: 22px 14px;
+      margin: 0;
+      color: #999;
+      font-size: 12px;
+      text-align: center;
+    }
+    .library-category[data-category="Liked Songs"]::before {
+      color: #ff6487;
+      content: "♥";
+      font-size: 15px;
     }

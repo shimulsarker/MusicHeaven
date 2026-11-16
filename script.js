@@ -101,7 +101,7 @@
     let currentLyrics = [];
     let currentLyricsTrackId = null;
     let activeLyricIndex = -1;
-    const libraryCategories = ["Songs", "Artists", "Albums", "Genres", "Folders"];
+    const libraryCategories = ["Songs", "Artists", "Albums", "Genres", "Folders", "Liked Songs"];
     let activeLibraryCategory = "Songs";
     let libraryFolderName = "";
     let activeFolderSelection = null;
@@ -207,7 +207,12 @@
       const groups = new Map();
       const addTrack = (index) => {
         const track = tracks[index];
-        const label = category === "Songs" ? "All songs" : (track[field] || fallbacks[category]);
+        if (category === "Liked Songs" && !favoriteTrackIds.has(track.id)) return;
+        const label = category === "Songs"
+          ? "All songs"
+          : category === "Liked Songs"
+            ? "Liked Songs"
+            : (track[field] || fallbacks[category]);
         if (!groups.has(label)) groups.set(label, []);
         groups.get(label).push({ track, index });
       };
@@ -293,13 +298,14 @@
     }
 
     function setArtwork(element, track) {
-      if (track && track.artwork) {
+      const hasArtwork = Boolean(track && track.artwork);
+      if (hasArtwork) {
         element.style.backgroundImage = `url("${track.artwork}")`;
-        element.classList.add("has-artwork");
       } else {
         element.style.removeProperty("background-image");
-        element.classList.remove("has-artwork");
       }
+      element.classList.toggle("has-artwork", hasArtwork);
+      element.classList.toggle("no-artwork", !hasArtwork);
     }
 
     function renderSearchResults() {
@@ -394,7 +400,13 @@
       return button;
     }
 
-    function* libraryListEntries(groups, query, foldersOnly) {
+    function* libraryListEntries(groups, query, foldersOnly, category) {
+      if (!groups.size && category === "Liked Songs") {
+        yield Object.assign(document.createElement("p"), {
+          className: "library-empty",
+          textContent: "Like a track to add it here."
+        });
+      }
       for (const [label, items] of groups) {
         if (foldersOnly) {
           if (!query || label.toLowerCase().includes(query)) yield createFolderEntry(label, items);
@@ -425,7 +437,7 @@
         ? playbackTrackIndices
         : null;
       const groups = groupTracksBy(activeLibraryCategory, trackIndices);
-      const entries = libraryListEntries(groups, query, foldersOnly);
+      const entries = libraryListEntries(groups, query, foldersOnly, activeLibraryCategory);
       const chunkSize = 12;
 
       function appendChunk() {
@@ -569,13 +581,12 @@
       document.getElementById("now-playing-title").textContent = track.title;
       document.getElementById("now-playing-artist").textContent = track.artist;
       const art = document.getElementById("now-playing-art");
+      setArtwork(art, track);
       if (track.artwork) {
-        art.src = track.artwork;
-        art.alt = `${track.title} album artwork`;
+        art.setAttribute("aria-label", `${track.title} album artwork`);
         nowPlayingOverlay.style.setProperty("--current-artwork", `url("${track.artwork}")`);
       } else {
-        art.removeAttribute("src");
-        art.alt = "No album artwork available";
+        art.setAttribute("aria-label", `${track.title} — no album artwork`);
         nowPlayingOverlay.style.removeProperty("--current-artwork");
       }
       const fileType = track.file && track.file.type ? track.file.type.replace("audio/", "").toUpperCase() : "";
@@ -1023,6 +1034,9 @@
       const isFavorite = favoriteTrackIds.has(track.id);
       if (isFavorite) favoriteTrackIds.delete(track.id);
       else favoriteTrackIds.add(track.id);
+      for (const cacheKey of groupedTracksCache.keys()) {
+        if (cacheKey.includes(":Liked Songs:")) groupedTracksCache.delete(cacheKey);
+      }
       settingsState.favoriteTrackIds = Array.from(favoriteTrackIds);
       persistSettings();
       updateFavoriteButton();
@@ -1030,6 +1044,9 @@
       if (heart) {
         heart.classList.toggle("is-liked", !isFavorite);
         heart.innerHTML = icon(isFavorite ? "i-heart" : "i-heart-fill");
+      }
+      if (activeNavigationView === "library" && activeLibraryCategory === "Liked Songs") {
+        renderTrackList(true);
       }
       showToast(isFavorite ? "Removed from favorites" : "Added to favorites");
     }
@@ -1186,6 +1203,13 @@
         track.genre = genre;
         track.artwork = artwork;
         track.lyrics = metadata.lyrics;
+        if (artworkChanged) {
+          const trackIndex = tracks.indexOf(track);
+          if (trackIndex >= 0) {
+            const cover = list.querySelector(`.track[data-track="${trackIndex}"] .cover`);
+            if (cover) setArtwork(cover, track);
+          }
+        }
         if (groupingChanged || artworkChanged) scheduleLibraryRefresh(false, groupingChanged);
         if (activeTrack === tracks.indexOf(track)) {
           currentLyricsTrackId = null;
