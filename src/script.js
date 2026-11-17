@@ -540,6 +540,37 @@
       return `${mins}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
     }
 
+    function getAudioQualityLabel(track) {
+      if (!(track.file instanceof Blob)) return "ılı Audio >";
+      const fileFormat = (track.format || track.file.type.split("/").pop() || "")
+        .toLowerCase()
+        .replace(/^x-/, "");
+      if (fileFormat === "flac") return "ılı Audio • FLAC / Lossless >";
+
+      const storedTime = typeof track.time === "string" ? track.time.match(/^(\d+):(\d{2})$/) : null;
+      const storedDuration = storedTime ? Number(storedTime[1]) * 60 + Number(storedTime[2]) : 0;
+      const trackDuration = tracks[activeTrack] === track && Number.isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration
+        : storedDuration;
+      if (!track.file.size || !trackDuration) return "ılı Audio >";
+
+      const approximateBitrate = track.file.size * 8 / (trackDuration * 1000);
+      const standardBitrates = [128, 192, 256, 320];
+      const bitrate = standardBitrates.reduce((closest, candidate) =>
+        Math.abs(candidate - approximateBitrate) < Math.abs(closest - approximateBitrate)
+          ? candidate
+          : closest
+      );
+      return `ılı Audio • ${bitrate} kbps >`;
+    }
+
+    function updateNowPlayingAudioQuality(track) {
+      const currentTrack = track || tracks[activeTrack];
+      if (currentTrack) {
+        document.getElementById("now-playing-audio-quality").textContent = getAudioQualityLabel(currentTrack);
+      }
+    }
+
     function updateNowPlayingProgress() {
       const track = tracks[activeTrack];
       const trackTime = track && typeof track.time === "string" ? track.time.match(/^(\d+):(\d{2})$/) : null;
@@ -606,6 +637,7 @@
       updateMediaSessionMetadata();
       document.getElementById("now-playing-title").textContent = track.title;
       document.getElementById("now-playing-artist").textContent = track.artist;
+      updateNowPlayingAudioQuality(track);
       const sourceName = activeNavigationView === "library"
         ? activeFolderSelection
           ? track.folder || libraryFolderName || "Your Library"
@@ -1216,6 +1248,7 @@
         artist,
         album: "Unknown album",
         genre: "Unknown genre",
+        format: extensionIndex > -1 ? fileName.slice(extensionIndex + 1).toLowerCase() : "",
         folder: pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : "Selected files",
         folderStructureId,
         time: "--:--",
@@ -1398,8 +1431,8 @@
           }
         }
         if (generation !== importGeneration) return;
-        const savedTracks = localTracks.map(({ id, title, artist, album, genre, folder, folderStructureId, time }) => ({
-          id, title, artist, album, genre, folder, folderStructureId, time
+        const savedTracks = localTracks.map(({ id, title, artist, album, genre, folder, folderStructureId, format, time }) => ({
+          id, title, artist, album, genre, folder, folderStructureId, format, time
         }));
         localStorage.setItem(playlistStorageKey, JSON.stringify({
           folderName: libraryFolderName,
@@ -1513,6 +1546,7 @@
             const index = tracks.indexOf(track);
             const row = list.querySelector(`.track[data-track="${index}"] .track-time`);
             if (row) row.textContent = track.time;
+            if (activeTrack === index) updateNowPlayingAudioQuality(track);
           }
           resolve();
         };
@@ -1549,7 +1583,7 @@
         .filter(isAudioFile)
         .sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true, sensitivity: "base" }));
       if (!supportedFiles.length) {
-        showToast("No supported audio files were found in that folder.");
+        showToast("No supported audio files were found in the selection.");
         return;
       }
 
@@ -1964,7 +1998,7 @@
     audio.volume = settingsState.defaultVolume;
     updateAudioOutputButton();
     document.getElementById("open-folder").addEventListener("click", () => folderInput.click());
-    document.getElementById("import-shortcut").addEventListener("click", () => folderInput.click());
+    document.getElementById("import-shortcut").addEventListener("click", () => songInput.click());
     categoryNavigation.addEventListener("click", (event) => {
       const button = event.target.closest("[data-category]");
       if (!button) return;
@@ -2038,6 +2072,7 @@
       const currentTrack = tracks[activeTrack];
       if (currentTrack) {
         currentTrack.time = formatTime(audio.duration).replace(/^0/, "");
+        updateNowPlayingAudioQuality(currentTrack);
         const currentDuration = list.querySelector(`.track[data-track="${activeTrack}"] .track-time`);
         if (currentDuration) currentDuration.textContent = currentTrack.time;
       }
