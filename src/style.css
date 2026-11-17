@@ -744,7 +744,7 @@
     }
     .topbar {
       position: sticky;
-      z-index: 5;
+      z-index: 100;
       top: 0;
       display: flex;
       height: 72px;
@@ -1114,7 +1114,7 @@
 
     .now-playing-overlay, .settings-view {
       position: fixed;
-      z-index: 12;
+      z-index: 110;
       inset: 0 0 88px 248px;
       overflow: hidden;
       color: #f4f4f4;
@@ -1436,15 +1436,16 @@
 
     @media (max-width: 780px) {
       html { font-size: clamp(14px, 3.8vw, 16px); }
+      body { --mobile-topbar-height: 72px; }
       .main-content { height: 100vh; height: 100dvh; }
       .sidebar {
-        inset: 0 0 auto;
+        inset: calc(var(--mobile-topbar-height) + env(safe-area-inset-top)) 0 auto;
         width: 100%;
-        height: calc(60px + env(safe-area-inset-top));
+        height: 60px;
         flex-direction: row;
         align-items: center;
         gap: 6px;
-        padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
+        padding: 6px 12px;
         overflow-x: auto;
         overflow-y: hidden;
         border-right: 0;
@@ -1480,9 +1481,14 @@
       .sidebar-import-actions { display: flex; width: auto; flex: 0 0 auto; gap: 6px; padding: 0; border-top: 0; margin: 0; }
       .sidebar-import-actions button { width: auto; height: 44px; min-height: 44px; flex: 0 0 auto; justify-content: flex-start; gap: 8px; padding: 0 12px; white-space: nowrap; }
       .sidebar-import-actions button span { display: inline; }
-      .main-content { margin-left: 0; padding: calc(60px + env(safe-area-inset-top)) 20px 130px; }
-      .topbar { top: calc(60px + env(safe-area-inset-top)); margin-right: -20px; margin-left: -20px; }
-      .now-playing-overlay, .settings-view { z-index: 16; inset: calc(60px + env(safe-area-inset-top)) 0 calc(82px + env(safe-area-inset-bottom)); }
+      .main-content { margin-left: 0; padding: 0 20px 130px; }
+      .topbar {
+        top: 0;
+        height: calc(var(--mobile-topbar-height) + env(safe-area-inset-top));
+        padding-top: env(safe-area-inset-top);
+        margin: 0 -20px 60px;
+      }
+      .now-playing-overlay, .settings-view { z-index: 110; inset: calc(var(--mobile-topbar-height) + 60px + env(safe-area-inset-top)) 0 calc(82px + env(safe-area-inset-bottom)); }
       .player-track-copy { max-width: min(180px, 26vw); }
       .player-track-copy strong { max-width: 100%; }
       .sidebar .nav-button,
@@ -1495,6 +1501,7 @@
     }
 
     @media (max-width: 580px) {
+      body { --mobile-topbar-height: 62px; }
       .main-content { padding-right: 13px; padding-bottom: calc(145px + env(safe-area-inset-bottom)); padding-left: 13px; }
       .topbar { margin-right: -13px; margin-left: -13px; }
       .greeting-row { align-items: flex-start; }
