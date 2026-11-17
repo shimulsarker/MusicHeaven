@@ -1999,6 +1999,7 @@
     updateAudioOutputButton();
     document.getElementById("open-folder").addEventListener("click", () => folderInput.click());
     document.getElementById("import-shortcut").addEventListener("click", () => songInput.click());
+    document.getElementById("import-folder-shortcut").addEventListener("click", () => folderInput.click());
     categoryNavigation.addEventListener("click", (event) => {
       const button = event.target.closest("[data-category]");
       if (!button) return;

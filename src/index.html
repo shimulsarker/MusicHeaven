@@ -69,7 +69,10 @@
         <div class="dashboard-content" id="home-dashboard">
         <section class="greeting-row">
           <div><p class="greeting-date">YOUR PERSONAL SOUNDTRACK</p><h1>Good Evening, Shimul</h1><p class="greeting-caption">Pick up where you left off, or find something new.</p></div>
-          <button class="import-shortcut" id="import-shortcut" type="button"><svg><use href="#i-folder"/></svg>Import music</button>
+          <div class="import-actions">
+            <button class="import-shortcut" id="import-shortcut" type="button"><svg><use href="#i-music"/></svg>Import music</button>
+            <button class="import-shortcut import-folder-shortcut" id="import-folder-shortcut" type="button"><svg><use href="#i-folder"/></svg>Import folder</button>
+          </div>
         </section>
 
         <section class="featured-section" aria-labelledby="featured-heading">
@@ -221,8 +224,8 @@
     </div>
   </section>
   <input class="file-input" id="backup-input" type="file" accept="application/json,.json" tabindex="-1" aria-label="Import MusicHeaven backup">
-  <input class="file-input" id="folder-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac,.webm,.wma" webkitdirectory directory multiple tabindex="-1" aria-label="Choose a folder containing audio files">
-  <input class="file-input" id="song-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac,.webm,.wma" multiple tabindex="-1" aria-label="Choose audio files to add">
+  <input class="file-input" id="folder-input" type="file" accept="audio/*" webkitdirectory directory multiple tabindex="-1" aria-label="Choose a folder containing audio files">
+  <input class="file-input" id="song-input" type="file" accept="audio/*" multiple tabindex="-1" aria-label="Choose audio files to add">
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <div class="eq-overlay" id="eq-overlay" aria-hidden="true">

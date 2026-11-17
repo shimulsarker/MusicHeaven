@@ -816,6 +816,9 @@
     }
     .import-shortcut:hover, .accent-button:hover { background: #64b8ff; transform: translateY(-1px); }
     .import-shortcut svg, .accent-button svg { width: 16px; height: 16px; }
+    .import-actions { display: flex; max-width: 100%; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .import-folder-shortcut { border: 1px solid rgba(255,255,255,.14); color: #e6edf5; background: #1b2530; }
+    .import-folder-shortcut:hover { background: #283746; }
     .featured-section { margin-bottom: 34px; }
     .featured-card {
       display: grid;
