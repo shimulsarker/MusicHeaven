@@ -541,8 +541,9 @@
     }
 
     function getAudioQualityLabel(track) {
-      if (!(track.file instanceof Blob)) return "ılı Audio >";
-      const fileFormat = (track.format || track.file.type.split("/").pop() || "")
+      const fileSize = track.file instanceof Blob ? track.file.size : Number(track.fileSize) || 0;
+      const fileType = track.file instanceof Blob ? track.file.type : "";
+      const fileFormat = (track.format || fileType.split("/").pop() || "")
         .toLowerCase()
         .replace(/^x-/, "");
       if (fileFormat === "flac") return "ılı Audio • FLAC / Lossless >";
@@ -552,9 +553,9 @@
       const trackDuration = tracks[activeTrack] === track && Number.isFinite(audio.duration) && audio.duration > 0
         ? audio.duration
         : storedDuration;
-      if (!track.file.size || !trackDuration) return "ılı Audio >";
+      if (!fileSize || !trackDuration) return "ılı Audio >";
 
-      const approximateBitrate = track.file.size * 8 / (trackDuration * 1000);
+      const approximateBitrate = fileSize * 8 / (trackDuration * 1000);
       const standardBitrates = [128, 192, 256, 320];
       const bitrate = standardBitrates.reduce((closest, candidate) =>
         Math.abs(candidate - approximateBitrate) < Math.abs(closest - approximateBitrate)
@@ -1258,6 +1259,34 @@
       };
     }
 
+    function createImportedUriTrack(file, folderStructureId) {
+      const relativePath = (file.relativePath || file.name).replace(/\\/g, "/");
+      const pathParts = relativePath.split("/").filter(Boolean);
+      const fileName = pathParts[pathParts.length - 1];
+      const extensionIndex = fileName.lastIndexOf(".");
+      const capacitor = window.Capacitor;
+      if (!capacitor || typeof capacitor.convertFileSrc !== "function") {
+        throw new Error("Capacitor cannot load audio files from the selected Android folder.");
+      }
+
+      return {
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        title: extensionIndex > 0 ? fileName.slice(0, extensionIndex) : fileName,
+        artist: pathParts.length > 2 ? pathParts.slice(1, -1).join(" / ") : "Local audio",
+        album: "Unknown album",
+        genre: "Unknown genre",
+        format: extensionIndex > -1 ? fileName.slice(extensionIndex + 1).toLowerCase() : "",
+        folder: pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : "Selected files",
+        folderStructureId,
+        time: "--:--",
+        src: capacitor.convertFileSrc(file.uri),
+        sourceUri: file.uri,
+        fileSize: Number(file.size) || 0,
+        file: null,
+        localFile: true
+      };
+    }
+
     function buildImportedFolderStructure(id, name, importedTracks) {
       const root = { name, path: name, trackIds: [], folders: [] };
       importedTracks.forEach((track) => {
@@ -1431,8 +1460,8 @@
           }
         }
         if (generation !== importGeneration) return;
-        const savedTracks = localTracks.map(({ id, title, artist, album, genre, folder, folderStructureId, format, time }) => ({
-          id, title, artist, album, genre, folder, folderStructureId, format, time
+        const savedTracks = localTracks.map(({ id, title, artist, album, genre, folder, folderStructureId, format, time, sourceUri, fileSize }) => ({
+          id, title, artist, album, genre, folder, folderStructureId, format, time, sourceUri, fileSize
         }));
         localStorage.setItem(playlistStorageKey, JSON.stringify({
           folderName: libraryFolderName,
@@ -1469,15 +1498,23 @@
         const restoredObjectUrls = [];
         for (const savedTrack of savedPlaylist.tracks) {
           const storedAudio = await loadAudioFile(savedTrack.id);
-          if (!storedAudio || !(storedAudio.blob instanceof Blob)) continue;
-          const src = URL.createObjectURL(storedAudio.blob);
-          restoredObjectUrls.push(src);
-          restoredTracks.push({
-            ...savedTrack,
-            src,
-            file: storedAudio.blob,
-            localFile: true
-          });
+          if (storedAudio && storedAudio.blob instanceof Blob) {
+            const src = URL.createObjectURL(storedAudio.blob);
+            restoredObjectUrls.push(src);
+            restoredTracks.push({
+              ...savedTrack,
+              src,
+              file: storedAudio.blob,
+              localFile: true
+            });
+          } else if (savedTrack.sourceUri && window.Capacitor && typeof window.Capacitor.convertFileSrc === "function") {
+            restoredTracks.push({
+              ...savedTrack,
+              src: window.Capacitor.convertFileSrc(savedTrack.sourceUri),
+              file: null,
+              localFile: true
+            });
+          }
         }
         if (generation !== importGeneration) {
           restoredObjectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -1613,6 +1650,66 @@
       void persistPlaylist({ saveAudioFiles: true });
       showToast(`${newTracks.length} audio ${newTracks.length === 1 ? "file" : "files"} loaded. Ready to play.`);
       void readTrackDetails(newTracks, generation);
+    }
+
+    async function importAndroidFolder() {
+      const capacitor = window.Capacitor;
+      if (
+        !capacitor
+        || typeof capacitor.getPlatform !== "function"
+        || capacitor.getPlatform() !== "android"
+        || typeof capacitor.nativePromise !== "function"
+      ) {
+        return false;
+      }
+
+      try {
+        const result = await capacitor.nativePromise("AudioFolderPicker", "pickFolder", {});
+        if (result.cancelled) return true;
+        const folderFiles = Array.isArray(result.files) ? result.files : [];
+        if (!folderFiles.length) {
+          showToast("No supported audio files were found in the selected folder.");
+          return true;
+        }
+
+        const folderStructureId = `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const folderName = result.folderName || "Imported folder";
+        const newTracks = folderFiles
+          .filter((file) => file && file.uri && file.name)
+          .map((file) => createImportedUriTrack(file, folderStructureId))
+          .sort((a, b) => a.folder.localeCompare(b.folder, undefined, { numeric: true, sensitivity: "base" })
+            || a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" }));
+        if (!newTracks.length) {
+          showToast("No supported audio files were found in the selected folder.");
+          return true;
+        }
+
+        audio.pause();
+        const generation = ++importGeneration;
+        const previousTracks = tracks.filter((track) => track.localFile);
+        tracks = [...previousTracks, ...newTracks];
+        invalidateLibraryCaches();
+        importedFolderStructures.push(buildImportedFolderStructure(folderStructureId, folderName, newTracks));
+        activeFolderSelection = null;
+        playbackTrackIndices = tracks.map((track, index) => index);
+        activeNavigationView = "library";
+        activeTrack = previousTracks.length;
+        if (activeLibraryCategory === "Folders") activeLibraryCategory = "Songs";
+        document.getElementById("search").value = "";
+        renderPlaylist(folderName);
+        setTrack(activeTrack, false);
+        void persistPlaylist();
+        showToast(`${newTracks.length} audio ${newTracks.length === 1 ? "file" : "files"} loaded. Ready to play.`);
+        void readTrackDetails(newTracks, generation);
+      } catch (error) {
+        console.error("Android folder import failed:", error);
+        showToast("Unable to import audio from the selected folder.");
+      }
+      return true;
+    }
+
+    async function openFolderImport() {
+      if (!await importAndroidFolder()) folderInput.click();
     }
 
     function renderEqBands() {
@@ -1997,9 +2094,9 @@
     });
     audio.volume = settingsState.defaultVolume;
     updateAudioOutputButton();
-    document.getElementById("open-folder").addEventListener("click", () => folderInput.click());
+    document.getElementById("open-folder").addEventListener("click", () => void openFolderImport());
     document.getElementById("import-shortcut").addEventListener("click", () => songInput.click());
-    document.getElementById("import-folder-shortcut").addEventListener("click", () => folderInput.click());
+    document.getElementById("import-folder-shortcut").addEventListener("click", () => void openFolderImport());
     categoryNavigation.addEventListener("click", (event) => {
       const button = event.target.closest("[data-category]");
       if (!button) return;
