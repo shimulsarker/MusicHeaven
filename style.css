@@ -958,7 +958,7 @@
     .player-art { display: block; width: 56px; height: 56px; flex: 0 0 auto; border-radius: 7px; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
     .player-track-copy { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
     .player-track-copy strong, .player-track-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .player-track-copy strong { color: #f0f0f0; font-size: 11px; font-weight: 650; }
+    .player-track-copy strong { display: block; max-width: 100%; overflow: hidden; color: #f0f0f0; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
     .player-track-copy span { color: #999; font-size: 9px; }
     .player-like { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 0; color: #999; background: transparent; cursor: pointer; }
     .player-like:hover { color: var(--accent); }
@@ -972,8 +972,8 @@
     .player-bar .control svg { width: 16px; height: 16px; }
     #repeat { position: relative; }
     #repeat[data-repeat-mode="one"]::after { position: absolute; top: 0; right: 2px; color: var(--accent); content: "1"; font-size: 9px; font-weight: 700; }
-    .player-bar .control.play { width: 34px; height: 34px; color: #101010; background: #f3f3f3; }
-    .player-bar .control.play:hover { color: #101010; background: #fff; transform: scale(1.05); }
+    .player-bar .control.play { width: 34px; height: 34px; border: 1px solid rgba(164,218,255,.62); color: #071521; background: linear-gradient(135deg, #62eaff, #8c8cff 65%, #d98cff); box-shadow: 0 0 18px rgba(98,234,255,.24), 0 0 32px rgba(142,102,255,.2), inset 0 1px rgba(255,255,255,.8); }
+    .player-bar .control.play:hover { color: #071521; background: linear-gradient(135deg, #8af2ff, #a9a0ff 65%, #edb2ff); box-shadow: 0 0 23px rgba(98,234,255,.38), 0 0 38px rgba(142,102,255,.3), inset 0 1px rgba(255,255,255,.9); transform: scale(1.05); }
     .player-bar .control.play svg { width: 16px; height: 16px; }
     .player-timeline { display: grid; grid-template-columns: 35px minmax(0, 1fr) 35px; align-items: center; gap: 9px; color: #909090; font-size: 9px; font-variant-numeric: tabular-nums; }
     .player-timeline span:last-child { text-align: right; }
@@ -1426,7 +1426,54 @@
     @media (max-width: 780px) {
       html { font-size: clamp(14px, 3.8vw, 16px); }
       .main-content { height: 100vh; height: 100dvh; }
-      .sidebar { padding-bottom: calc(105px + env(safe-area-inset-bottom)); }
+      .sidebar {
+        inset: 0 0 auto;
+        width: 100%;
+        height: 60px;
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        background: rgba(16,16,16,.97);
+        scrollbar-width: none;
+      }
+      .sidebar::-webkit-scrollbar { display: none; }
+      .brand-mark, .sidebar-section-label, .sidebar-spacer { display: none; }
+      .sidebar .nav-button {
+        width: auto;
+        min-width: max-content;
+        min-height: 44px;
+        flex: 0 0 auto;
+        justify-content: flex-start;
+        gap: 8px;
+        padding: 0 12px;
+        white-space: nowrap;
+      }
+      .sidebar .nav-button span { display: inline; }
+      .sidebar .nav-button svg { width: 18px; height: 18px; }
+      .library-categories { width: auto; flex: 0 0 auto; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 6px; margin: 0; }
+      .library-category {
+        width: auto;
+        min-width: max-content;
+        min-height: 44px;
+        overflow: visible;
+        padding: 0 12px;
+        color: #b6b6b6;
+        text-align: left;
+      }
+      .library-category::before { margin-right: 8px; }
+      .sidebar-import-actions { display: flex; width: auto; flex: 0 0 auto; gap: 6px; padding: 0; border-top: 0; margin: 0; }
+      .sidebar-import-actions button { width: auto; height: 44px; min-height: 44px; flex: 0 0 auto; justify-content: flex-start; gap: 8px; padding: 0 12px; white-space: nowrap; }
+      .sidebar-import-actions button span { display: inline; }
+      .main-content { margin-left: 0; padding: 60px 20px 130px; }
+      .topbar { top: 60px; margin-right: -20px; margin-left: -20px; }
+      .now-playing-overlay, .settings-view { z-index: 16; inset: 60px 0 calc(82px + env(safe-area-inset-bottom)); }
+      .player-track-copy { max-width: min(180px, 26vw); }
+      .player-track-copy strong { max-width: 100%; }
       .sidebar .nav-button,
       .sidebar-import-actions button { min-height: 44px; }
       .library-category { min-height: 44px; }
@@ -1437,7 +1484,8 @@
     }
 
     @media (max-width: 580px) {
-      .main-content { padding-bottom: calc(145px + env(safe-area-inset-bottom)); }
+      .main-content { padding-right: 13px; padding-bottom: calc(145px + env(safe-area-inset-bottom)); padding-left: 13px; }
+      .topbar { margin-right: -13px; margin-left: -13px; }
       .greeting-row { align-items: flex-start; }
       .greeting-row h1 { font-size: clamp(1.5rem, 7vw, 2rem); line-height: 1.2; }
       .featured-card { min-height: 0; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; }
@@ -1451,19 +1499,20 @@
       .player-bar .control.play { width: 40px; height: 40px; }
       .player-controls { top: 6px; gap: 2px; }
       .player-like { min-width: 40px; min-height: 40px; }
-      .now-playing-overlay, .settings-view { z-index: 16; left: 0; }
-      .now-playing-overlay { bottom: calc(112px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+      .now-playing-overlay, .settings-view { bottom: calc(112px + env(safe-area-inset-bottom)); }
+      .now-playing-overlay { overscroll-behavior: contain; }
       .now-playing-back, .settings-close { width: 44px; height: 44px; }
       .now-playing-back { top: 10px; left: 12px; }
       .now-playing-columns { padding: 64px 16px 20px; }
       .now-playing-art { width: min(72vw, 270px); }
-      .settings-view { bottom: calc(112px + env(safe-area-inset-bottom)); }
       .settings-topbar { min-height: 64px; }
       .settings-category { min-height: 44px; }
       .settings-content { min-height: 0; overscroll-behavior: contain; }
       .setting-card { grid-template-columns: minmax(0, 1fr); gap: 12px; }
       .setting-button { min-height: 40px; }
       .toast { bottom: calc(121px + env(safe-area-inset-bottom)); }
+      .player-track-copy { max-width: clamp(56px, calc(100vw - 288px), 150px); }
+      .player-track-copy strong { max-width: 100%; }
     }
 
     @media (max-width: 360px) {

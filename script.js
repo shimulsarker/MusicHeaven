@@ -1,4 +1,6 @@
     const audio = document.getElementById("audio");
+    const mediaSession = "mediaSession" in navigator ? navigator.mediaSession : null;
+    const defaultMediaArtwork = new URL("./favicon.png", document.baseURI).href;
     const stage = document.getElementById("stage");
     const playButton = document.getElementById("play");
     const seek = document.getElementById("seek");
@@ -578,6 +580,7 @@
     function updateNowPlaying() {
       const track = tracks[activeTrack];
       if (!track) return;
+      updateMediaSessionMetadata();
       document.getElementById("now-playing-title").textContent = track.title;
       document.getElementById("now-playing-artist").textContent = track.artist;
       const art = document.getElementById("now-playing-art");
@@ -919,12 +922,80 @@
       }
     }
 
+    function updateMediaSessionMetadata() {
+      if (!mediaSession || typeof window.MediaMetadata !== "function") return;
+      const track = tracks[activeTrack];
+      if (!track) return;
+      const artwork = track.artwork
+        ? [{ src: track.artwork }]
+        : [{ src: defaultMediaArtwork, type: "image/png" }];
+      mediaSession.metadata = new window.MediaMetadata({
+        title: track.title,
+        artist: track.artist || "Unknown artist",
+        album: track.album || "MusicHeaven",
+        artwork
+      });
+    }
+
+    function updateMediaSessionPositionState() {
+      if (!mediaSession || typeof mediaSession.setPositionState !== "function") return;
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+        mediaSession.setPositionState();
+        return;
+      }
+      const position = Number.isFinite(audio.currentTime)
+        ? Math.max(0, Math.min(audio.currentTime, audio.duration))
+        : 0;
+      mediaSession.setPositionState({
+        duration: audio.duration,
+        playbackRate: audio.playbackRate || 1,
+        position
+      });
+    }
+
+    function seekAudioTo(position) {
+      if (!Number.isFinite(position) || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+      audio.currentTime = Math.max(0, Math.min(position, audio.duration));
+      updateMediaSessionPositionState();
+    }
+
+    function registerMediaSessionAction(action, handler) {
+      if (!mediaSession || typeof mediaSession.setActionHandler !== "function") return;
+      try {
+        mediaSession.setActionHandler(action, handler);
+      } catch (error) {
+        if (error && typeof error === "object" && error.name === "NotSupportedError") return;
+        throw error;
+      }
+    }
+
+    function setupMediaSession() {
+      if (!mediaSession) return;
+      registerMediaSessionAction("play", () => {
+        if (audio.paused) void togglePlayback();
+      });
+      registerMediaSessionAction("pause", () => audio.pause());
+      registerMediaSessionAction("previoustrack", () => stepTrack(-1));
+      registerMediaSessionAction("nexttrack", () => stepTrack(1));
+      registerMediaSessionAction("seekto", ({ seekTime }) => seekAudioTo(seekTime));
+      registerMediaSessionAction("seekbackward", ({ seekOffset }) => {
+        seekAudioTo(audio.currentTime - (Number.isFinite(seekOffset) ? seekOffset : 10));
+      });
+      registerMediaSessionAction("seekforward", ({ seekOffset }) => {
+        seekAudioTo(audio.currentTime + (Number.isFinite(seekOffset) ? seekOffset : 10));
+      });
+    }
+
     function updatePlayState() {
       const playing = !audio.paused;
       stage.classList.toggle("is-playing", playing);
       playButton.setAttribute("aria-label", playing ? "Pause" : "Play");
       playButton.title = playing ? "Pause" : "Play";
       playButton.innerHTML = icon(playing ? "i-pause" : "i-play");
+      if (mediaSession && "playbackState" in mediaSession) {
+        mediaSession.playbackState = audio.src ? (playing ? "playing" : "paused") : "none";
+      }
+      updateMediaSessionPositionState();
     }
 
     async function togglePlayback() {
@@ -1879,6 +1950,7 @@
         const currentDuration = list.querySelector(`.track[data-track="${activeTrack}"] .track-time`);
         if (currentDuration) currentDuration.textContent = currentTrack.time;
       }
+      updateMediaSessionPositionState();
     });
     audio.addEventListener("timeupdate", () => {
       elapsed.textContent = formatTime(audio.currentTime);
@@ -1888,10 +1960,14 @@
         setSeekFill(progress);
       }
       updateSyncedLyrics();
+      updateMediaSessionPositionState();
     });
     audio.addEventListener("play", updatePlayState);
     audio.addEventListener("pause", updatePlayState);
+    audio.addEventListener("durationchange", updateMediaSessionPositionState);
+    audio.addEventListener("ratechange", updateMediaSessionPositionState);
     audio.addEventListener("ended", () => {
+      updatePlayState();
       if (repeatMode === "all" || (repeatMode === "off" && settingsState.autoplayNext)) stepTrack(1);
     });
     list.addEventListener("click", (event) => {
@@ -2069,6 +2145,7 @@
     document.body.classList.toggle("hide-library-metadata", !settingsState.showMetadata);
     logDiagnostic("Application initialized");
     animateBars();
+    setupMediaSession();
     setTrack(0, false);
     void restorePlaylist();
     window.addEventListener("pagehide", (event) => {
