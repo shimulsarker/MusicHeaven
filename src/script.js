@@ -17,6 +17,7 @@
     let tracks = demoTracks.map((track) => ({ ...track }));
     let activeTrack = 0;
     let shuffleOn = false;
+    let shuffleQueue = [];
     let repeatMode = "off";
     let toastTimer;
     let nowPlayingCloseTimer;
@@ -1043,6 +1044,7 @@
     function setTrack(index, autoplay) {
       if (!playbackTrackIndices.includes(index)) index = playbackTrackIndices[0];
       activeTrack = index;
+      if (shuffleOn) shuffleQueue = shuffleQueue.filter((queuedIndex) => queuedIndex !== activeTrack);
       const track = tracks[activeTrack];
       document.getElementById("current-title").textContent = track.title;
       document.getElementById("current-artist").textContent = track.artist;
@@ -1080,14 +1082,31 @@
     function stepTrack(direction) {
       if (!playbackTrackIndices.length) return;
       if (direction > 0 && shuffleOn) {
-        const candidates = playbackTrackIndices.filter((index) => index !== activeTrack);
-        if (candidates.length) setTrack(candidates[Math.floor(Math.random() * candidates.length)], true);
+        if (!shuffleQueue.length) resetShuffleQueue();
+        const nextIndex = shuffleQueue.shift();
+        if (nextIndex !== undefined) setTrack(nextIndex, true);
         else if (repeatMode === "all") setTrack(activeTrack, true);
         return;
       }
       const currentPosition = playbackTrackIndices.indexOf(activeTrack);
       const nextPosition = (currentPosition + direction + playbackTrackIndices.length) % playbackTrackIndices.length;
       setTrack(playbackTrackIndices[nextPosition], true);
+    }
+
+    function resetShuffleQueue() {
+      shuffleQueue = playbackTrackIndices.filter((index) => index !== activeTrack);
+      for (let index = shuffleQueue.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [shuffleQueue[index], shuffleQueue[swapIndex]] = [shuffleQueue[swapIndex], shuffleQueue[index]];
+      }
+    }
+
+    function toggleShuffle() {
+      shuffleOn = !shuffleOn;
+      if (shuffleOn) resetShuffleQueue();
+      else shuffleQueue = [];
+      updateShuffleButton();
+      showToast(shuffleOn ? "Shuffle is on" : "Shuffle is off");
     }
 
     function updateShuffleButton() {
@@ -1894,9 +1913,7 @@
       stepTrack(1);
     });
     document.getElementById("shuffle").addEventListener("click", () => {
-      shuffleOn = !shuffleOn;
-      updateShuffleButton();
-      showToast(shuffleOn ? "Shuffle is on" : "Shuffle is off");
+      toggleShuffle();
     });
     document.getElementById("repeat").addEventListener("click", (event) => {
       const modes = ["off", "all", "one"];
@@ -1909,9 +1926,7 @@
     document.getElementById("now-playing-previous").addEventListener("click", () => stepTrack(-1));
     document.getElementById("now-playing-next").addEventListener("click", () => stepTrack(1));
     document.getElementById("now-playing-shuffle").addEventListener("click", () => {
-      shuffleOn = !shuffleOn;
-      updateShuffleButton();
-      showToast(shuffleOn ? "Shuffle is on" : "Shuffle is off");
+      toggleShuffle();
     });
     document.getElementById("now-playing-repeat").addEventListener("click", () => {
       const modes = ["off", "all", "one"];
@@ -1987,9 +2002,6 @@
       }
     });
     document.getElementById("player-track-open").addEventListener("click", openNowPlaying);
-    document.querySelector(".player-bar").addEventListener("click", (event) => {
-      if (!event.target.closest("button, input")) openNowPlaying();
-    });
     document.getElementById("quick-picks").addEventListener("click", (event) => {
       const button = event.target.closest("[data-track]");
       if (button) playTrackFromCard(Number(button.dataset.track));
@@ -2049,7 +2061,26 @@
     audio.addEventListener("ratechange", updateMediaSessionPositionState);
     audio.addEventListener("ended", () => {
       updatePlayState();
-      if (repeatMode === "all" || (repeatMode === "off" && settingsState.autoplayNext)) stepTrack(1);
+      if (repeatMode === "one") {
+        if (!audio.loop) {
+          audio.currentTime = 0;
+          void togglePlayback();
+        }
+        return;
+      }
+      if (repeatMode === "all") {
+        stepTrack(1);
+        return;
+      }
+      if (!settingsState.autoplayNext) return;
+      if (shuffleOn) {
+        if (shuffleQueue.length) stepTrack(1);
+        return;
+      }
+      const currentPosition = playbackTrackIndices.indexOf(activeTrack);
+      if (currentPosition >= 0 && currentPosition < playbackTrackIndices.length - 1) {
+        setTrack(playbackTrackIndices[currentPosition + 1], true);
+      }
     });
     list.addEventListener("click", (event) => {
       const folderButton = event.target.closest("[data-folder]");
