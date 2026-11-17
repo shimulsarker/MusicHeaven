@@ -2257,3 +2257,28 @@
     window.addEventListener("pagehide", (event) => {
       if (!event.persisted) importedObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     });
+
+// --- Auto Update Checker ---
+const CURRENT_APP_VERSION = "1.0.0";
+const GIST_RAW_URL = "YOUR_GIST_RAW_URL_HERE";
+
+async function checkForAppUpdate() {
+  try {
+    const response = await fetch(`${GIST_RAW_URL}?t=${new Date().getTime()}`);
+    const data = await response.json();
+
+    if (data.latestVersion && data.latestVersion !== CURRENT_APP_VERSION) {
+      const userConfirmed = window.confirm(
+        `New update available (v${data.latestVersion})!\n\n${data.releaseNotes}\n\nDo you want to download it now?`
+      );
+
+      if (userConfirmed && data.apkUrl) {
+        window.open(data.apkUrl, "_system");
+      }
+    }
+  } catch (error) {
+    console.error("Update check failed:", error);
+  }
+}
+
+window.addEventListener("DOMContentLoaded", checkForAppUpdate);
