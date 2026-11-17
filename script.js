@@ -1087,15 +1087,15 @@
     }
 
     function updateFavoriteButton() {
-      const button = document.querySelector(".player-like");
+      const button = document.getElementById("player-like");
       const track = tracks[activeTrack];
       const isFavorite = Boolean(track && favoriteTrackIds.has(track.id));
       button.classList.toggle("is-liked", isFavorite);
       button.setAttribute("aria-pressed", String(isFavorite));
       button.setAttribute("aria-label", isFavorite
-        ? `Remove ${track.title} from favorites`
-        : `Add ${track ? track.title : "current track"} to favorites`);
-      button.title = isFavorite ? "Remove from favorites" : "Add to favorites";
+        ? `Unlike ${track.title}`
+        : `Like ${track ? track.title : "current track"}`);
+      button.title = isFavorite ? "Unlike this track" : "Like this track";
       button.innerHTML = icon(isFavorite ? "i-heart-fill" : "i-heart");
     }
 
@@ -1119,7 +1119,7 @@
       if (activeNavigationView === "library" && activeLibraryCategory === "Liked Songs") {
         renderTrackList(true);
       }
-      showToast(isFavorite ? "Removed from favorites" : "Added to favorites");
+      showToast(isFavorite ? "Removed from Liked Songs" : "Added to Liked Songs");
     }
 
     function setSeekFill(progress) {
@@ -1863,7 +1863,7 @@
       updateRepeatButton();
       showToast(repeatMode === "off" ? "Repeat is off" : `Repeat ${repeatMode} is on`);
     });
-    document.querySelector(".player-like").addEventListener("click", () => toggleTrackFavorite(activeTrack));
+    document.getElementById("player-like").addEventListener("click", () => toggleTrackFavorite(activeTrack));
     updateShuffleButton();
     updateRepeatButton();
     document.getElementById("volume").value = String(settingsState.defaultVolume);
