@@ -205,11 +205,40 @@
     let downloadDirectoryHandle = null;
     let artworkAccentRequest = 0;
     let activeNavigationView = "home";
+    let activeMoodFilter = "All";
+    let featuredTrackIndex = 0;
+    let lastMobileScrollTop = 0;
     document.body.classList.add("home-view");
+
+    function updateMobileNavigation() {
+      const activeTab = activeNavigationView === "home"
+        ? "home"
+        : activeNavigationView === "library" && activeLibraryCategory === "Folders"
+          ? "folder"
+          : "library";
+      document.querySelectorAll("[data-mobile-tab]").forEach((button) => {
+        const selected = button.dataset.mobileTab === activeTab;
+        button.classList.toggle("selected", selected);
+        button.setAttribute("aria-current", selected ? "page" : "false");
+      });
+    }
 
     function setActiveNavigationView(view) {
       activeNavigationView = view;
       document.body.classList.toggle("home-view", view === "home");
+      if (view !== "home") document.body.classList.remove("mobile-dock-collapsed");
+      updateMobileNavigation();
+    }
+
+    function updateGreeting() {
+      const currentHour = new Date().getHours();
+      const greeting = currentHour < 12 ? "Good morning" : currentHour < 18 ? "Good afternoon" : "Good evening";
+      document.getElementById("greeting-title").textContent = greeting;
+      document.getElementById("greeting-date").textContent = new Date().toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "long",
+        day: "numeric"
+      }).toUpperCase();
     }
 
     const eqBands = [
@@ -335,15 +364,37 @@
       });
     }
 
-    function renderHomeSections() {
-      const recommendedTracks = tracks.map((track, index) => ({ track, index }))
+    const moodKeywords = {
+      Energize: ["dance", "electronic", "rock", "upbeat", "energetic", "punk", "metal", "workout"],
+      Relax: ["ambient", "acoustic", "classical", "jazz", "chill", "calm", "soft", "slow"],
+      "Feel good": ["pop", "funk", "soul", "disco", "happy", "feel good", "dance"],
+      Workout: ["workout", "rock", "hip hop", "dance", "electronic", "metal", "upbeat"]
+    };
+
+    function getHomeRecommendations() {
+      const visibleTracks = tracks.map((track, index) => ({ track, index }))
         .filter(({ track }) => !settingsState.hiddenTrackIds.includes(track.id));
+      const keywords = moodKeywords[activeMoodFilter];
+      if (!keywords) return visibleTracks;
+      return visibleTracks.filter(({ track }) => {
+        const searchable = `${track.title} ${track.artist} ${track.album} ${track.genre}`.toLowerCase();
+        return keywords.some((keyword) => searchable.includes(keyword));
+      });
+    }
+
+    function renderHomeSections() {
+      const recommendedTracks = getHomeRecommendations();
       const featuredTrack = recommendedTracks[0]?.track || tracks[0];
+      featuredTrackIndex = recommendedTracks[0]?.index ?? -1;
       const featuredArt = document.getElementById("featured-art");
       featuredArt.className = `featured-art art-${1}`;
       setArtwork(featuredArt, featuredTrack);
-      document.getElementById("featured-title").textContent = recommendedTracks.length ? featuredTrack.title : "No recommendations";
-      document.getElementById("featured-artist").textContent = recommendedTracks.length ? featuredTrack.artist : "Restore a hidden track in Library settings.";
+      document.getElementById("featured-title").textContent = recommendedTracks.length
+        ? featuredTrack.title
+        : activeMoodFilter === "All" ? "No recommendations" : `No ${activeMoodFilter} tracks`;
+      document.getElementById("featured-artist").textContent = recommendedTracks.length
+        ? featuredTrack.artist
+        : "Try another mood or add matching genre tags.";
 
       const quickPicks = document.getElementById("quick-picks");
       quickPicks.replaceChildren();
@@ -392,7 +443,10 @@
         const artist = document.createElement("span");
         artist.className = "album-artist";
         artist.textContent = album.track.artist;
-        button.append(art, title, artist);
+        const badge = document.createElement("span");
+        badge.className = "discover-badge";
+        badge.textContent = "DISCOVER";
+        button.append(art, badge, title, artist);
         listenAgain.appendChild(button);
       });
     }
@@ -1959,6 +2013,39 @@
       openNowPlaying();
     }
 
+    function playHomeRadio() {
+      if (featuredTrackIndex < 0) {
+        showToast(`No tracks match the ${activeMoodFilter} filter.`);
+        return;
+      }
+      playbackTrackIndices = getHomeRecommendations().map(({ index }) => index);
+      setTrack(featuredTrackIndex, true);
+    }
+
+    function playGenreRadio(genre) {
+      const genreKeywords = {
+        Indie: ["indie", "independent", "alternative"],
+        Hindi: ["hindi", "bollywood", "hindustani"],
+        Indian: ["indian", "bengali", "bangla", "tamil", "telugu", "punjabi", "marathi", "kannada", "malayalam"],
+        Pop: ["pop"]
+      };
+      const keywords = genreKeywords[genre] || [genre.toLowerCase()];
+      const matchingTracks = tracks.map((track, index) => ({ track, index }))
+        .filter(({ track }) => {
+          if (settingsState.hiddenTrackIds.includes(track.id)) return false;
+          const searchable = `${track.title} ${track.artist} ${track.album} ${track.genre}`.toLowerCase();
+          return keywords.some((keyword) => searchable.includes(keyword));
+        });
+      if (!matchingTracks.length) {
+        showToast(`No ${genre} tracks found in your library metadata.`);
+        return;
+      }
+      playbackTrackIndices = matchingTracks.map(({ index }) => index);
+      activeFolderSelection = null;
+      setTrack(playbackTrackIndices[0], true);
+      showToast(`${genre} radio started.`);
+    }
+
     function stepTrack(direction) {
       if (!playbackTrackIndices.length) return;
       if (direction > 0 && shuffleOn) {
@@ -2488,6 +2575,7 @@
       setActiveNavigationView("library");
       activeTrack = previousTracks.length;
       if (activeLibraryCategory === "Folders") activeLibraryCategory = "Songs";
+      updateMobileNavigation();
       document.getElementById("search").value = "";
       const collectionName = importedFolderStructures.length === 1
         ? folderName
@@ -2542,6 +2630,7 @@
         setActiveNavigationView("library");
         activeTrack = previousTracks.length;
         if (activeLibraryCategory === "Folders") activeLibraryCategory = "Songs";
+        updateMobileNavigation();
         document.getElementById("search").value = "";
         renderPlaylist(folderName);
         setTrack(activeTrack, false);
@@ -2906,8 +2995,9 @@
       const librarySection = document.getElementById("library-section");
       setActiveNavigationView("library");
       activeLibraryCategory = button.dataset.category;
-      if (activeFolderSelection) playbackTrackIndices = tracks.map((track, index) => index);
+      playbackTrackIndices = tracks.map((track, index) => index);
       activeFolderSelection = null;
+      updateMobileNavigation();
       document.getElementById("search").value = "";
       document.querySelectorAll(".nav-button").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
@@ -2925,14 +3015,41 @@
       }
       void persistPlaylist();
     });
-    document.getElementById("featured-play").addEventListener("click", () => playTrackFromCard(0));
-    document.getElementById("featured-art").addEventListener("click", () => playTrackFromCard(0));
-    document.getElementById("featured-title").addEventListener("click", () => playTrackFromCard(0));
+    document.getElementById("featured-play").addEventListener("click", playHomeRadio);
+    document.getElementById("featured-art").addEventListener("click", playHomeRadio);
+    document.getElementById("featured-title").addEventListener("click", playHomeRadio);
     document.getElementById("featured-title").addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        playTrackFromCard(0);
+        playHomeRadio();
       }
+    });
+    document.getElementById("mood-filter-row").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-mood]");
+      if (!button) return;
+      activeMoodFilter = button.dataset.mood;
+      document.querySelectorAll(".mood-chip").forEach((chip) => {
+        const selected = chip === button;
+        chip.classList.toggle("selected", selected);
+        chip.setAttribute("aria-pressed", String(selected));
+      });
+      renderHomeSections();
+    });
+    document.querySelector(".quick-access-row").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-quick-access]");
+      if (!button) return;
+      if (button.dataset.quickAccess === "liked") {
+        const likedSongsButton = categoryNavigation.querySelector('[data-category="Liked Songs"]');
+        if (likedSongsButton) likedSongsButton.click();
+      } else if (button.dataset.quickAccess === "youtube-liked") {
+        window.open("https://music.youtube.com/playlist?list=LM", "_blank", "noopener,noreferrer");
+      } else if (button.dataset.quickAccess === "discover") {
+        document.getElementById("discover-section").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+    document.querySelector(".genre-chip-row").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-genre]");
+      if (button) playGenreRadio(button.dataset.genre);
     });
     document.getElementById("player-track-open").addEventListener("click", openNowPlaying);
     document.getElementById("quick-picks").addEventListener("click", (event) => {
@@ -3057,6 +3174,12 @@
       const button = event.target.closest(".queue-cover");
       if (button) playTrackFromCard(Number(button.dataset.track));
     });
+    const topbar = document.querySelector(".topbar");
+    document.getElementById("mobile-search-toggle").addEventListener("click", () => {
+      const isSearchOpen = topbar.classList.toggle("search-open");
+      if (isSearchOpen) document.getElementById("search").focus();
+    });
+    document.getElementById("profile-settings").addEventListener("click", openSettingsView);
     document.getElementById("search").addEventListener("input", (event) => {
       if (!event.currentTarget.value.trim()) renderTrackList();
       renderSearchResults();
@@ -3279,6 +3402,8 @@
           if (activeFolderSelection) playbackTrackIndices = tracks.map((track, index) => index);
           activeFolderSelection = null;
           activeLibraryCategory = "Songs";
+          playbackTrackIndices = tracks.map((track, index) => index);
+          updateMobileNavigation();
           document.getElementById("search").value = "";
           renderSearchResults();
           renderTrackList();
@@ -3291,6 +3416,7 @@
           closeNowPlaying();
           setActiveNavigationView("playlists");
           activeLibraryCategory = "Songs";
+          updateMobileNavigation();
           activeFolderSelection = null;
           playbackTrackIndices = tracks.map((track, index) => index);
           renderLibraryCategories();
@@ -3304,8 +3430,41 @@
       });
     });
 
+    document.getElementById("mobile-bottom-nav").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-mobile-tab]");
+      if (!button) return;
+      if (button.dataset.mobileTab === "home") {
+        document.querySelector('.sidebar [data-view="home"]').click();
+        return;
+      }
+      const category = button.dataset.mobileTab === "folder" ? "Folders" : "Songs";
+      let categoryButton = categoryNavigation.querySelector(`[data-category="${category}"]`);
+      if (!categoryButton) {
+        renderLibraryCategories();
+        categoryButton = categoryNavigation.querySelector(`[data-category="${category}"]`);
+      }
+      if (categoryButton) categoryButton.click();
+    });
+
+    stage.addEventListener("scroll", () => {
+      if (!window.matchMedia("(max-width: 780px)").matches || activeNavigationView !== "home") {
+        document.body.classList.remove("mobile-dock-collapsed");
+        lastMobileScrollTop = stage.scrollTop;
+        return;
+      }
+      const currentScrollTop = stage.scrollTop;
+      if (currentScrollTop <= 24 || currentScrollTop < lastMobileScrollTop - 2) {
+        document.body.classList.remove("mobile-dock-collapsed");
+      } else if (currentScrollTop > lastMobileScrollTop + 2) {
+        document.body.classList.add("mobile-dock-collapsed");
+      }
+      lastMobileScrollTop = currentScrollTop;
+    }, { passive: true });
+
     setupEqualizer();
     applyAppearanceSettings();
+    updateGreeting();
+    updateMobileNavigation();
     document.body.classList.toggle("compact-library", settingsState.compactLibrary);
     document.body.classList.toggle("hide-library-metadata", !settingsState.showMetadata);
     logDiagnostic("Application initialized");

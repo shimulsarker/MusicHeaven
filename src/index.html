@@ -38,6 +38,7 @@
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/></symbol>
     <symbol id="i-reset" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 1-2.3-5.7L20 7.5M20 3v4.5h-4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-thumbs-up" viewBox="0 0 24 24"><path d="M7 10v11H3V10Zm3 11h7.2a2 2 0 0 0 1.9-1.4l2.2-7A2 2 0 0 0 19.4 10H14l.8-4.1A2.4 2.4 0 0 0 12.5 3L7 10v9a2 2 0 0 0 3 2Z" fill="currentColor"/></symbol>
   </svg>
 
   <div class="app-shell">
@@ -57,17 +58,26 @@
 
     <main class="main-content" id="stage">
       <header class="topbar">
+        <h1 class="mobile-page-title">Home</h1>
         <div class="topbar-brand"><span class="topbar-mark"><svg><use href="#i-cloud"/></svg></span><strong>MusicHeaven</strong></div>
         <label class="search"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="Search songs, artists, albums..." aria-label="Search tracks"></label>
         <div class="topbar-spacer"></div>
         <button class="icon-button" aria-label="Favorites" title="Favorites"><svg><use href="#i-heart"/></svg></button>
-        <button class="profile" aria-label="Your profile">S</button>
+        <button class="mobile-search-toggle" id="mobile-search-toggle" type="button" aria-label="Search"><svg><use href="#i-search"/></svg></button>
+        <button class="profile" id="profile-settings" aria-label="Open settings">S</button>
       </header>
 
       <div class="content-wrap" id="main-content">
         <div class="dashboard-content" id="home-dashboard">
+        <nav class="mood-filter-row" id="mood-filter-row" aria-label="Filter by mood">
+          <button type="button" class="mood-chip selected" data-mood="All" aria-pressed="true">All</button>
+          <button type="button" class="mood-chip" data-mood="Energize" aria-pressed="false">Energize</button>
+          <button type="button" class="mood-chip" data-mood="Relax" aria-pressed="false">Relax</button>
+          <button type="button" class="mood-chip" data-mood="Feel good" aria-pressed="false">Feel good</button>
+          <button type="button" class="mood-chip" data-mood="Workout" aria-pressed="false">Workout</button>
+        </nav>
         <section class="greeting-row">
-          <div><p class="greeting-date">YOUR PERSONAL SOUNDTRACK</p><h1>Good Evening, Shimul</h1><p class="greeting-caption">Pick up where you left off, or find something new.</p></div>
+          <div><p class="greeting-date" id="greeting-date">WEDNESDAY, NOVEMBER 18</p><h1 id="greeting-title">Good evening</h1><p class="greeting-caption">Pick up where you left off, or find something new.</p></div>
           <div class="import-actions">
             <button class="import-shortcut" id="import-shortcut" type="button"><svg><use href="#i-music"/></svg>Import music</button>
             <button class="import-shortcut import-folder-shortcut" id="import-folder-shortcut" type="button"><svg><use href="#i-folder"/></svg>Import folder</button>
@@ -78,11 +88,12 @@
           <div class="featured-card">
             <button type="button" class="featured-art art-1" id="featured-art" aria-label="Play featured track"><span class="art-glow" aria-hidden="true"></span><span class="art-monogram" aria-hidden="true">MH</span></button>
             <div class="featured-copy">
-              <p class="eyebrow">MADE FOR YOUR MOMENT</p>
-              <h2 id="featured-heading">For You</h2>
+              <p class="eyebrow">MADE FOR YOU</p>
+              <h2 id="featured-heading">Infinite Radio</h2>
+              <p class="featured-description">An endless station shaped by your listening</p>
               <h3 id="featured-title" role="button" tabindex="0">Mon Majhi Re</h3>
               <p id="featured-artist">Arijit Singh</p>
-              <button class="accent-button" id="featured-play" type="button"><svg><use href="#i-play"/></svg>Play mix</button>
+              <button class="accent-button" id="featured-play" type="button"><svg><use href="#i-play"/></svg>Play</button>
             </div>
             <aside class="queue featured-queue" aria-label="Up next">
               <span class="queue-title">Up next</span>
@@ -92,13 +103,44 @@
           </div>
         </section>
 
-        <section class="home-section" aria-labelledby="quick-picks-heading">
+        <section class="home-section quick-access-section" aria-labelledby="quick-access-heading">
+          <div class="section-heading"><h2 id="quick-access-heading">Quick access</h2></div>
+          <div class="quick-access-row">
+            <button type="button" class="quick-access-card liked-songs-card" data-quick-access="liked" aria-label="Open Liked Songs">
+              <span class="quick-access-art"><svg><use href="#i-heart-fill"/></svg></span>
+              <span class="quick-access-title">Liked Songs</span>
+              <span class="quick-access-subtitle">Your collection</span>
+            </button>
+            <button type="button" class="quick-access-card liked-youtube-card" data-quick-access="youtube-liked" aria-label="Open liked songs on YouTube Music">
+              <span class="quick-access-art"><svg><use href="#i-thumbs-up"/></svg></span>
+              <span class="quick-access-title">Liked on YT</span>
+              <span class="quick-access-subtitle">Your collection</span>
+            </button>
+            <button type="button" class="quick-access-card discover-access-card" data-quick-access="discover" aria-label="Discover new music">
+              <span class="quick-access-art"><svg><use href="#i-search"/></svg></span>
+              <span class="quick-access-title">Discover</span>
+              <span class="quick-access-subtitle">Made for you</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="home-section genre-section" aria-labelledby="genre-heading">
+          <div class="section-heading"><div><h2 id="genre-heading">My genres</h2><p class="section-description">Tap a vibe to start instant radio</p></div></div>
+          <div class="genre-chip-row">
+            <button type="button" class="genre-chip" data-genre="Indie">• Indie</button>
+            <button type="button" class="genre-chip" data-genre="Hindi">• Hindi</button>
+            <button type="button" class="genre-chip" data-genre="Indian">• Indian</button>
+            <button type="button" class="genre-chip" data-genre="Pop">• Pop</button>
+          </div>
+        </section>
+
+        <section class="home-section" id="quick-picks-section" aria-labelledby="quick-picks-heading">
           <div class="section-heading"><div><p class="section-kicker">A FEW GOOD CHOICES</p><h2 id="quick-picks-heading">Quick Picks</h2></div></div>
           <div class="quick-picks-grid" id="quick-picks"></div>
         </section>
 
-        <section class="home-section listen-section" aria-labelledby="listen-again-heading">
-          <div class="section-heading"><div><p class="section-kicker">BACK IN ROTATION</p><h2 id="listen-again-heading">Listen Again</h2></div><button class="text-action" id="listen-see-all" type="button">See all</button></div>
+        <section class="home-section listen-section" id="discover-section" aria-labelledby="listen-again-heading">
+          <div class="section-heading"><div><h2 id="listen-again-heading">Discover New Music</h2><p class="section-description">Handpicked tracks matched to your taste</p></div><button class="text-action" id="listen-see-all" type="button">See all</button></div>
           <div class="album-row" id="listen-again"></div>
         </section>
 
@@ -138,6 +180,11 @@
     </div>
     <div class="player-extra"><svg><use href="#i-volume"/></svg><input id="volume" type="range" min="0" max="1" step=".01" value=".72" aria-label="Volume"><button class="icon-button" aria-label="More player options"><svg><use href="#i-more"/></svg></button></div>
   </footer>
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Main views">
+    <button type="button" class="mobile-bottom-tab selected" data-mobile-tab="home" aria-current="page"><svg><use href="#i-home"/></svg><span>Home</span></button>
+    <button type="button" class="mobile-bottom-tab" data-mobile-tab="folder" aria-current="false"><svg><use href="#i-folder"/></svg><span>Folder</span></button>
+    <button type="button" class="mobile-bottom-tab" data-mobile-tab="library" aria-current="false"><svg><use href="#i-music"/></svg><span>Library</span></button>
+  </nav>
   <section class="now-playing-overlay" id="now-playing-overlay" aria-label="Now playing and lyrics" aria-hidden="true" hidden>
     <div class="now-playing-backdrop"></div>
     <div class="now-playing-view">
