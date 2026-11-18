@@ -1557,11 +1557,13 @@
       body.android-platform .player-bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
     }
     @media (max-width: 580px) {
-      body.android-platform .main-content { padding-bottom: calc(145px + env(safe-area-inset-bottom)); }
-      body.android-platform .player-bar { height: calc(112px + env(safe-area-inset-bottom)); grid-template-rows: 44px 38px; gap: 2px; }
+      body.android-platform .main-content { padding-bottom: calc(161px + env(safe-area-inset-bottom)); }
+      body.android-platform .player-bar { height: calc(128px + env(safe-area-inset-bottom)); grid-template-columns: minmax(0, 1fr); grid-template-rows: 42px 40px 22px; gap: 2px; }
+      body.android-platform .player-center { grid-row: 2 / span 2; display: grid; grid-template-rows: 40px 22px; gap: 2px; }
+      body.android-platform .player-controls { position: static; justify-content: center; gap: clamp(2px, 1vw, 4px); }
       body.android-platform .now-playing-overlay,
-      body.android-platform .settings-view { bottom: calc(112px + env(safe-area-inset-bottom)); }
-      body.android-platform .toast { bottom: calc(121px + env(safe-area-inset-bottom)); }
+      body.android-platform .settings-view { bottom: calc(128px + env(safe-area-inset-bottom)); }
+      body.android-platform .toast { bottom: calc(137px + env(safe-area-inset-bottom)); }
     }
 
     .now-playing-overlay {
