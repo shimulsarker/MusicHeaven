@@ -205,6 +205,12 @@
     let downloadDirectoryHandle = null;
     let artworkAccentRequest = 0;
     let activeNavigationView = "home";
+    document.body.classList.add("home-view");
+
+    function setActiveNavigationView(view) {
+      activeNavigationView = view;
+      document.body.classList.toggle("home-view", view === "home");
+    }
 
     const eqBands = [
       { frequency: 31, label: "31", value: 2.7 },
@@ -2479,7 +2485,7 @@
       importedFolderStructures.push(buildImportedFolderStructure(folderStructureId, folderName, newTracks));
       activeFolderSelection = null;
       playbackTrackIndices = tracks.map((track, index) => index);
-      activeNavigationView = "library";
+      setActiveNavigationView("library");
       activeTrack = previousTracks.length;
       if (activeLibraryCategory === "Folders") activeLibraryCategory = "Songs";
       document.getElementById("search").value = "";
@@ -2533,7 +2539,7 @@
         importedFolderStructures.push(buildImportedFolderStructure(folderStructureId, folderName, newTracks));
         activeFolderSelection = null;
         playbackTrackIndices = tracks.map((track, index) => index);
-        activeNavigationView = "library";
+        setActiveNavigationView("library");
         activeTrack = previousTracks.length;
         if (activeLibraryCategory === "Folders") activeLibraryCategory = "Songs";
         document.getElementById("search").value = "";
@@ -2898,7 +2904,7 @@
       closeSettingsView();
       closeNowPlaying();
       const librarySection = document.getElementById("library-section");
-      activeNavigationView = "library";
+      setActiveNavigationView("library");
       activeLibraryCategory = button.dataset.category;
       if (activeFolderSelection) playbackTrackIndices = tracks.map((track, index) => index);
       activeFolderSelection = null;
@@ -3269,7 +3275,7 @@
         else if (button.dataset.view === "home") {
           closeSettingsView();
           closeNowPlaying();
-          activeNavigationView = "home";
+          setActiveNavigationView("home");
           if (activeFolderSelection) playbackTrackIndices = tracks.map((track, index) => index);
           activeFolderSelection = null;
           activeLibraryCategory = "Songs";
@@ -3283,7 +3289,7 @@
         } else if (button.dataset.view === "playlists") {
           closeSettingsView();
           closeNowPlaying();
-          activeNavigationView = "playlists";
+          setActiveNavigationView("playlists");
           activeLibraryCategory = "Songs";
           activeFolderSelection = null;
           playbackTrackIndices = tracks.map((track, index) => index);

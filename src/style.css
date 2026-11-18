@@ -1798,3 +1798,8 @@
       .setting-card-full .eq-bands { min-height: 180px; }
       .setting-card-full .eq-card { min-height: 420px; }
     }
+    body:not(.home-view) .player-bar,
+    body.now-playing-open .player-bar,
+    body.settings-open .player-bar { display: none; }
+    body.now-playing-open .now-playing-overlay,
+    body.settings-open .settings-view { bottom: 0; }
