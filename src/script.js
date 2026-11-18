@@ -25,16 +25,30 @@
     let analyser;
     let frequencyData;
     let audioSource;
+    let outputGain;
+    let mixFadeScheduledForTrack = null;
     let eqFilters = [];
     let eqSaveTimer;
     let importGeneration = 0;
     let importedObjectUrls = [];
+    let lastFmAuthToken = "";
+    let lastFmNowPlayingTrackId = "";
+    let lastFmScrobbledTrackId = "";
+    let lastFmTrackStartedAt = 0;
+    let lastFmBackendStatus = { available: false, checked: false, lastFmSecretConfigured: false };
+    let youtubeAccessToken = "";
+    let youtubeTokenClient;
+    let youtubeClientScriptPromise;
+    let youtubeOAuthReady = false;
+    let youtubeOAuthLoading = false;
+    let youtubeSyncInProgress = false;
     const playlistStorageKey = "musicHeaven.playlist.v1";
     const settingsStorageKey = "musicHeaven.settings.v1";
     const defaultEqValues = [2.7, 2.2, 0.6, -2.6, -0.6, 1.2, 3, 4, 4.3, 4.8];
     const eqPresetNames = [
       "Default", "Studio Master", "Vocal Clarity", "Deep Bass Clean", "Bass Boost",
-      "Warm", "Bright", "Late Night", "Rock", "Pop", "Electronic", "R&B"
+      "Warm", "Bright", "Late Night", "Rock", "Pop", "Electronic", "R&B",
+      "Acoustic", "Classical", "Jazz", "Treble Air", "Speech / Podcast"
     ];
     const audioProfileNames = ["Reference", "Speaker", "Headphone", "DAC"];
     const defaultSettings = {
@@ -56,7 +70,36 @@
       verboseLogging: false,
       favoriteTrackIds: [],
       accentColor: "#3ea6ff",
-      defaultVolume: .72
+      defaultVolume: .72,
+      timedMix: false,
+      downloadLyrics: true,
+      downloadLocation: "Default location",
+      folderLayout: "Flat",
+      podcasts: true,
+      youtubeMusicSync: false,
+      hiddenTrackIds: [],
+      theme: "Midnight",
+      customAccentColor: "#3ea6ff",
+      hazeMaterial: "Automatic",
+      hazeIntensity: "Medium",
+      nowPlayingAmbient: "Apple Music",
+      amoledBlack: false,
+      dynamicArtworkTheme: false,
+      lastFmApiKey: "",
+      lastFmScrobbling: false,
+      lastFmNowPlaying: true,
+      lastFmThreshold: 50,
+      lastFmSessionKey: "",
+      lastFmUsername: "",
+      integrationsBackendUrl: "",
+      youtubeConnected: false,
+      youtubeOAuthClientId: "",
+      youtubePlaylistId: "",
+      youtubeSyncedTrackIds: [],
+      spotifyConnected: false,
+      spotifyCanvas: true,
+      discordRichPresence: true,
+      addonSources: []
     };
     let settingsState = { ...defaultSettings };
     try {
@@ -67,13 +110,45 @@
     } catch (error) {
       console.warn("Saved settings could not be read:", error);
     }
+    let settingsMigrated = false;
+    ["lastFmSharedSecret", "youtubeHistorySync"].forEach((key) => {
+      if (!Object.prototype.hasOwnProperty.call(settingsState, key)) return;
+      delete settingsState[key];
+      settingsMigrated = true;
+    });
+    if (settingsMigrated) {
+      try {
+        localStorage.setItem(settingsStorageKey, JSON.stringify(settingsState));
+      } catch (error) {
+        console.warn("Legacy integration settings could not be removed from browser storage:", error);
+      }
+    }
     ["backgroundPlayback", "autoplayNext", "rememberVolume", "equalizerEnabled", "clarityEnabled",
-      "compactLibrary", "showMetadata", "highlightLyrics", "verboseLogging"].forEach((key) => {
+      "compactLibrary", "showMetadata", "highlightLyrics", "verboseLogging", "timedMix",
+      "downloadLyrics", "podcasts", "youtubeMusicSync", "amoledBlack", "dynamicArtworkTheme",
+      "lastFmScrobbling", "lastFmNowPlaying", "youtubeConnected",
+      "spotifyConnected", "spotifyCanvas", "discordRichPresence"].forEach((key) => {
       if (typeof settingsState[key] !== "boolean") settingsState[key] = defaultSettings[key];
     });
-    if (!["#3ea6ff", "#6ee7d8", "#c18cff"].includes(settingsState.accentColor)) {
-      settingsState.accentColor = defaultSettings.accentColor;
-    }
+    settingsState.youtubeConnected = false;
+    if (typeof settingsState.accentColor !== "string" || !/^#[0-9a-f]{6}$/i.test(settingsState.accentColor)) settingsState.accentColor = defaultSettings.accentColor;
+    if (typeof settingsState.customAccentColor !== "string" || !/^#[0-9a-f]{6}$/i.test(settingsState.customAccentColor)) settingsState.customAccentColor = settingsState.accentColor;
+    if (!["Midnight", "Pearl", "Custom"].includes(settingsState.theme)) settingsState.theme = "Midnight";
+    if (!["Automatic", "Solid"].includes(settingsState.hazeMaterial)) settingsState.hazeMaterial = "Automatic";
+    if (!["Low", "Medium", "High"].includes(settingsState.hazeIntensity)) settingsState.hazeIntensity = "Medium";
+    if (!["Apple Music", "WinUI"].includes(settingsState.nowPlayingAmbient)) settingsState.nowPlayingAmbient = "Apple Music";
+    if (!["Flat", "Artist", "Album"].includes(settingsState.folderLayout)) settingsState.folderLayout = "Flat";
+    if (!Array.isArray(settingsState.hiddenTrackIds)) settingsState.hiddenTrackIds = [];
+    if (!Array.isArray(settingsState.addonSources)) settingsState.addonSources = [];
+    if (!Array.isArray(settingsState.youtubeSyncedTrackIds)) settingsState.youtubeSyncedTrackIds = [];
+    ["lastFmApiKey", "lastFmSessionKey", "lastFmUsername", "integrationsBackendUrl",
+      "youtubeOAuthClientId", "youtubePlaylistId"].forEach((key) => {
+      if (typeof settingsState[key] !== "string") settingsState[key] = defaultSettings[key];
+    });
+    if (!settingsState.lastFmSessionKey) settingsState.lastFmScrobbling = false;
+    if (!Number.isFinite(Number(settingsState.lastFmThreshold))) settingsState.lastFmThreshold = 50;
+    settingsState.lastFmThreshold = Math.max(25, Math.min(90, Number(settingsState.lastFmThreshold)));
+    if (typeof settingsState.downloadLocation !== "string") settingsState.downloadLocation = defaultSettings.downloadLocation;
     const normalizeEqValues = (values, fallback) => {
       if (!Array.isArray(values) || values.length !== 10 ||
         values.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
@@ -121,6 +196,8 @@
     let libraryCacheInvalidationRequested = false;
     let importedFolderStructures = [];
     let playlistDatabase;
+    let downloadDirectoryHandle = null;
+    let artworkAccentRequest = 0;
     let activeNavigationView = "home";
 
     const eqBands = [
@@ -147,7 +224,12 @@
       { name: "Rock", values: [3.5, 2.4, -1.2, -2.2, -1, 1.4, 2.8, 3.2, 3.4, 3] },
       { name: "Pop", values: [-.5, .8, 2, 2.4, .8, -.4, .6, 1.8, 2.2, 2] },
       { name: "Electronic", values: [4, 3.4, 1.2, 0, -1.2, 1.6, .5, 1.7, 3.3, 3.8] },
-      { name: "R&B", values: [2.8, 2.2, .8, -.6, -.2, 1.4, 2, 1.3, .4, 1.1] }
+      { name: "R&B", values: [2.8, 2.2, .8, -.6, -.2, 1.4, 2, 1.3, .4, 1.1] },
+      { name: "Acoustic", values: [1.2, .8, .2, -.4, .6, 1.4, 2, 1.8, 1.2, .8] },
+      { name: "Classical", values: [2, 1.5, 1, .5, -.5, -.5, 0, .8, 1.2, 1.5] },
+      { name: "Jazz", values: [2, 1.5, .5, .8, -.8, -.8, 0, .8, 1.5, 2] },
+      { name: "Treble Air", values: [-1, -.5, 0, 0, 0, .5, 1, 2, 3, 4] },
+      { name: "Speech / Podcast", values: [-3, -2, -1, 0, 2, 3, 3, 2, .5, -1] }
     ];
     const clarityCurve = [-.4, -.2, 0, .2, .5, .8, .8, .4, 0, -.2];
     const clarityProfiles = {
@@ -167,8 +249,7 @@
     let activeClarityProfile = settingsState.audioProfile;
     let eqEnabled = settingsState.equalizerEnabled;
     let clarityFilters = [];
-    const eqOverlay = document.getElementById("eq-overlay");
-    const eqNavButton = document.querySelector('.nav-button[aria-label="Equalizer"]');
+    const eqCardHolder = document.getElementById("eq-card-holder");
     const nowPlayingOverlay = document.getElementById("now-playing-overlay");
     const settingsView = document.getElementById("settings-view");
 
@@ -243,16 +324,18 @@
     }
 
     function renderHomeSections() {
-      const featuredTrack = tracks[0];
+      const recommendedTracks = tracks.map((track, index) => ({ track, index }))
+        .filter(({ track }) => !settingsState.hiddenTrackIds.includes(track.id));
+      const featuredTrack = recommendedTracks[0]?.track || tracks[0];
       const featuredArt = document.getElementById("featured-art");
       featuredArt.className = `featured-art art-${1}`;
       setArtwork(featuredArt, featuredTrack);
-      document.getElementById("featured-title").textContent = featuredTrack.title;
-      document.getElementById("featured-artist").textContent = featuredTrack.artist;
+      document.getElementById("featured-title").textContent = recommendedTracks.length ? featuredTrack.title : "No recommendations";
+      document.getElementById("featured-artist").textContent = recommendedTracks.length ? featuredTrack.artist : "Restore a hidden track in Library settings.";
 
       const quickPicks = document.getElementById("quick-picks");
       quickPicks.replaceChildren();
-      tracks.slice(0, 9).forEach((track, index) => {
+      recommendedTracks.slice(0, 9).forEach(({ track, index }) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "quick-pick";
@@ -277,7 +360,7 @@
       });
 
       const albums = new Map();
-      tracks.forEach((track, index) => {
+      recommendedTracks.forEach(({ track, index }) => {
         const albumName = track.album && track.album !== "Unknown album" ? track.album : track.title;
         if (!albums.has(albumName)) albums.set(albumName, { track, index });
       });
@@ -311,6 +394,29 @@
       }
       element.classList.toggle("has-artwork", hasArtwork);
       element.classList.toggle("no-artwork", !hasArtwork);
+    }
+
+    function updateDynamicArtworkAccent(track) {
+      if (!settingsState.dynamicArtworkTheme || !track || !track.artwork) return;
+      const requestId = ++artworkAccentRequest;
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.onload = () => {
+        if (requestId !== artworkAccentRequest || !settingsState.dynamicArtworkTheme) return;
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = 1;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context) return;
+          context.drawImage(image, 0, 0, 1, 1);
+          const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
+          const color = [red, green, blue].map((channel) => Math.max(54, Math.min(220, channel)));
+          document.documentElement.style.setProperty("--accent", `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`);
+        } catch (error) {
+          console.warn("Artwork theme color could not be sampled:", error);
+        }
+      };
+      image.src = track.artwork;
     }
 
     function renderSearchResults() {
@@ -647,6 +753,7 @@
       document.getElementById("now-playing-source").textContent = sourceName;
       const art = document.getElementById("now-playing-art");
       setArtwork(art, track);
+      updateDynamicArtworkAccent(track);
       if (track.artwork) {
         art.setAttribute("aria-label", `${track.title} album artwork`);
         nowPlayingOverlay.style.setProperty("--current-artwork", `url("${track.artwork}")`);
@@ -791,8 +898,24 @@
       return `<label class="setting-control"><span>${label}</span><input type="checkbox" role="switch" data-setting="${key}" ${settingsState[key] ? "checked" : ""}><i aria-hidden="true"></i>${note ? `<small>${note}</small>` : ""}</label>`;
     }
 
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[character]);
+    }
+
     function settingCard(category, title, description, control) {
       return { category, title, description, control };
+    }
+
+    function choiceButtons(key, choices, selected) {
+      return `<div class="setting-choices" role="group">${choices.map((choice) =>
+        `<button type="button" class="setting-choice${selected === choice ? " selected" : ""}" data-choice-key="${key}" data-choice-value="${choice}" aria-pressed="${selected === choice}">${choice}</button>`
+      ).join("")}</div>`;
     }
 
     function settingsCatalog() {
@@ -800,21 +923,29 @@
       return [
         settingCard("General", "Behaviour", "Choose how MusicHeaven behaves when you switch tabs. Browsers do not provide a system tray.", toggleControl("backgroundPlayback", "Continue playback in background", "If disabled, playback pauses when this tab is hidden.")),
         settingCard("General", "Backup", "Export playlists and app settings as JSON. Audio files stay in this browser's IndexedDB and are not included.", '<div class="setting-actions"><button type="button" class="setting-button primary" data-action="export-backup">Export backup</button><button type="button" class="setting-button" data-action="import-backup">Import backup</button></div>'),
-        settingCard("General", "Cached data", `MusicHeaven uses about ${storageUse} of LocalStorage for playlist metadata and settings. Audio files are stored separately in IndexedDB.`, `<div class="setting-actions"><span class="storage-stat">${storageUse} local data</span><button type="button" class="setting-button danger" data-action="clear-cache">Clear cached data</button></div>`),
+        settingCard("General", "Cached data", `LocalStorage: ${storageUse}. Audio files are stored separately in IndexedDB.`, `<div class="setting-actions"><span class="storage-stat" id="storage-stat">${storageUse} local data · calculating IndexedDB…</span><button type="button" class="setting-button danger" data-action="clear-cache">Clear cached data</button></div>`),
         settingCard("General", "Diagnostics", "Verbose logging adds app events to the local diagnostic export.", `${toggleControl("verboseLogging", "Verbose logging")}<div class="setting-actions"><button type="button" class="setting-button" data-action="export-diagnostics">Export diagnostic logs</button></div>`),
 
         settingCard("Playback", "Playback behaviour", "Control what happens when a track finishes or the tab is backgrounded.", `${toggleControl("autoplayNext", "Automatically play next track")}${toggleControl("backgroundPlayback", "Continue playback in background")}`),
         settingCard("Playback", "Volume", "Set the player volume and optionally remember it on this device.", `${toggleControl("rememberVolume", "Remember volume") }<label class="setting-range"><span>Default volume</span><input type="range" min="0" max="1" step=".01" value="${settingsState.defaultVolume}" data-setting="defaultVolume"></label>`),
-        settingCard("Audio", "Sound processing", "Enable the built-in equalizer and Studio Clarity audio filters.", `${toggleControl("equalizerEnabled", "Equalizer")}${toggleControl("clarityEnabled", "Studio Clarity")}`),
+        settingCard("Audio", "AutoMix", "A short fade at track boundaries avoids abrupt transitions. True gapless playback depends on the selected audio files and browser.", `${toggleControl("timedMix", "Timed mix")}`),
+        settingCard("Audio", "Equalizer & Sound FX", "10-band Web Audio equalizer with live frequency-response curve and sound-processing controls.", `<div id="eq-card-host"></div><span class="setting-search-terms">${eqPresetNames.join(" ")} 31 Hz 63 Hz 125 Hz 250 Hz 500 Hz 1 kHz 2 kHz 4 kHz 8 kHz 16 kHz Flat (0 dB) +2 dB Bass +2 dB Treble Double-click band to zero Master on off</span>`),
+        settingCard("Downloads", "Offline", "Download lyrics sidecars and choose how MusicHeaven organizes files saved through supported browser features.", `${toggleControl("downloadLyrics", "Download lyrics", "Save synced lyrics as .lrc when available.")}<div class="setting-location"><span><strong>Save location</strong><small id="download-location-label">${settingsState.downloadLocation}</small></span><button type="button" class="setting-button" data-action="choose-download-location">Change</button></div><label class="setting-select"><span>Folder layout</span><select data-setting="folderLayout"><option${settingsState.folderLayout === "Flat" ? " selected" : ""}>Flat</option><option${settingsState.folderLayout === "Artist" ? " selected" : ""}>Artist</option><option${settingsState.folderLayout === "Album" ? " selected" : ""}>Album</option></select></label><button type="button" class="setting-button" data-action="reorganize-downloads">Reorganize existing downloads</button>`),
         settingCard("Library", "Library display", "Adjust how imported songs and metadata are shown.", `${toggleControl("compactLibrary", "Compact song list")}${toggleControl("showMetadata", "Show artist and album details")}`),
+        settingCard("Library", "Library sources", "Show podcast results and sync imported music to a private YouTube playlist.", `${toggleControl("podcasts", "Podcasts")}${toggleControl("youtubeMusicSync", "YouTube Music sync")}<div class="setting-actions"><button type="button" class="setting-button" data-action="youtube-sync"${youtubeSyncInProgress ? " disabled" : ""}>${youtubeSyncInProgress ? "Syncing…" : "Sync now"}</button></div><p class="setting-note">This syncs local tracks to your private playlist. YouTube does not provide an official listening-history sync API.</p><h4 class="setting-subheading">Hidden from recommendations</h4><div class="setting-list" id="hidden-track-list"></div>`),
         settingCard("Lyrics", "Lyrics display", "Highlight the currently active line when embedded timestamps are available.", toggleControl("highlightLyrics", "Highlight synced lyrics")),
-        settingCard("Appearance", "Accent color", "Choose an accent color for controls and highlights.", `<div class="accent-options">${[["#3ea6ff", "Cyan blue"], ["#6ee7d8", "Mint"], ["#c18cff", "Violet"]].map(([color, name]) => `<button type="button" class="accent-option${settingsState.accentColor === color ? " selected" : ""}" data-accent="${color}" style="--option-color:${color}" aria-label="${name}" aria-pressed="${settingsState.accentColor === color}"></button>`).join("")}</div>`),
-        settingCard("Downloads", "Local audio", "Imported audio is saved in this browser's IndexedDB for offline access. MusicHeaven does not fetch or download tracks from online services.", '<p class="setting-note">Use Import folder or Add songs in the sidebar to add files from this device.</p>'),
-        settingCard("Last.fm", "Scrobbling", "Last.fm scrobbling is not connected in this local-only player.", '<p class="setting-note">No account credentials are stored or transmitted.</p>'),
-        settingCard("Integrations", "Connected services", "There are no external services connected.", '<p class="setting-note">Your imported library stays on this device.</p>'),
-        settingCard("Sources", "Music sources", "MusicHeaven currently plays audio files selected from your device.", '<p class="setting-note">Cloud streaming sources are not configured.</p>'),
+        settingCard("Appearance", "Theme", "Choose a built-in theme or customize your own accent.", `${choiceButtons("theme", ["Midnight", "Pearl", "Custom"], settingsState.theme)}<div class="accent-options">${[["#f2f2f2", "Pearl"], ["#3ea6ff", "Blue"], ["#ef4444", "Red"], ["#8b5cf6", "Violet"], ["#20a6c7", "Cyan"], ["#52a35f", "Green"], ["#e6a62e", "Amber"], ["#e34d78", "Pink"]].map(([color, name]) => `<button type="button" class="accent-option${settingsState.accentColor === color ? " selected" : ""}" data-accent="${color}" style="--option-color:${color}" aria-label="${name}" aria-pressed="${settingsState.accentColor === color}"></button>`).join("")}<label class="custom-color"><span>Custom colour</span><input type="color" value="${settingsState.customAccentColor}" data-custom-accent aria-label="Custom accent colour"></label></div>`),
+        settingCard("Appearance", "Haze material", "Set surface material and intensity.", `<label class="setting-select"><span>Material</span><select data-setting="hazeMaterial"><option${settingsState.hazeMaterial === "Automatic" ? " selected" : ""}>Automatic</option><option${settingsState.hazeMaterial === "Solid" ? " selected" : ""}>Solid</option></select></label><label class="setting-range"><span>Intensity</span></label>${choiceButtons("hazeIntensity", ["Low", "Medium", "High"], settingsState.hazeIntensity)}`),
+        settingCard("Appearance", "Now Playing ambient", "Choose the background style behind artwork and lyrics.", choiceButtons("nowPlayingAmbient", ["Apple Music", "WinUI"], settingsState.nowPlayingAmbient)),
+        settingCard("Appearance", "Surfaces", "Adjust contrast and artwork tinting.", `${toggleControl("amoledBlack", "AMOLED black")}${toggleControl("dynamicArtworkTheme", "Dynamic artwork theme")}`),
+        settingCard("Last.fm", "Last.fm connection", `Status: ${settingsState.lastFmUsername ? `Connected as ${settingsState.lastFmUsername}` : "Not connected"}.`, `<label class="setting-text-input"><span>Backend API URL</span><input type="url" autocomplete="url" data-backend-url value="${escapeHtml(settingsState.integrationsBackendUrl)}" placeholder="Blank uses this site’s server"></label><label class="setting-text-input"><span>Last.fm API key</span><input type="text" autocomplete="off" data-lastfm-key value="${escapeHtml(settingsState.lastFmApiKey)}" placeholder="Enter API key"></label><div class="setting-status" id="lastfm-backend-status">${lastFmBackendStatus.available ? (lastFmBackendStatus.lastFmSecretConfigured ? "Backend ready; shared secret configured on server." : "Backend online; set LASTFM_SHARED_SECRET on the server.") : "Backend status not checked."}</div><div class="setting-actions"><button type="button" class="setting-button" data-action="lastfm-save">Save &amp; validate</button><button type="button" class="setting-button primary" data-action="lastfm-connect">${lastFmAuthToken ? "I've authorized — verify" : "Connect Last.fm"}</button><button type="button" class="setting-button" data-action="lastfm-signout">Sign out</button><button type="button" class="setting-button" data-action="lastfm-clear">Clear API key</button></div><p class="setting-note">The shared secret is kept only in the backend environment (.env: LASTFM_SHARED_SECRET); it is never stored in this browser. Create an API app at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener noreferrer">last.fm/api/account/create</a>. After authorizing in a new tab, return here and verify.</p>`),
+        settingCard("Last.fm", "Last.fm scrobbling", "When connected, now-playing updates and scrobbles are sent through the configured backend.", `${toggleControl("lastFmScrobbling", "Enable scrobbling")}${toggleControl("lastFmNowPlaying", "Now playing updates")}<label class="setting-range"><span>Scrobble at ${settingsState.lastFmThreshold}% of track</span><input type="range" min="25" max="90" step="1" value="${settingsState.lastFmThreshold}" data-setting="lastFmThreshold"></label>`),
+        settingCard("Integrations", "YouTube Music", "Connect with Google OAuth to sync imported tracks into a private YouTube playlist. Listening history is not available through the official API.", `<label class="setting-text-input"><span>Google OAuth Client ID</span><input type="text" autocomplete="off" data-youtube-client-id value="${escapeHtml(settingsState.youtubeOAuthClientId)}" placeholder="...apps.googleusercontent.com"></label><div class="setting-actions"><span class="storage-stat" id="youtube-status">${youtubeAccessToken ? "Connected for this session" : "Not connected"}</span><button type="button" class="setting-button" data-action="youtube-connect">${youtubeAccessToken ? "Disconnect" : "Add"}</button></div><p class="setting-note">Enable YouTube Data API v3 and allow your app origin in the Google OAuth client settings. The client ID is public; no client secret belongs in this app.</p>`),
+        settingCard("Integrations", "Spotify", "Spotify cookie login and Canvas need a trusted service integration; credentials are not collected by this local app.", `<div class="setting-actions"><button type="button" class="setting-button" data-action="spotify-login">Login with cookies</button></div>${toggleControl("spotifyCanvas", "Spotify Canvas")}`),
+        settingCard("Integrations", "Discord", "Rich presence is available only through a desktop bridge; browser-only mode cannot publish it.", toggleControl("discordRichPresence", "Discord Rich Presence")),
+        settingCard("Sources", "Addon sources", "Add-on URLs are stored on this device. Source execution is not supported by this local player.", '<div class="setting-list" id="addon-source-list"></div><button type="button" class="setting-button primary" data-action="add-addon">Add addon</button>'),
         settingCard("Experimental", "Experimental features", "No experimental playback features are enabled.", '<p class="setting-note">Core library and playback features remain available.</p>'),
-        settingCard("About", "MusicHeaven", "A local music player for your personal library.", '<p class="setting-note">Playlist metadata is stored in LocalStorage; imported audio is stored in IndexedDB.</p>')
+        settingCard("About", "About MusicHeaven", "Build and project links", `<div class="about-version"><strong>MusicHeaven · v${CURRENT_APP_VERSION}</strong><button type="button" class="setting-button" data-action="check-updates">↻ Check for updates</button></div><div class="about-links"><a class="setting-button" href="https://github.com/shimulsarker/MusicHeaven" target="_blank" rel="noopener noreferrer">↗ GitHub repository</a><a class="setting-button" href="https://github.com/shimulsarker/MusicHeaven/issues" target="_blank" rel="noopener noreferrer">ⓘ Report an issue</a><a class="setting-button" href="https://github.com/shimulsarker/MusicHeaven/releases" target="_blank" rel="noopener noreferrer">★ Releases</a></div><p class="setting-note" id="update-check-status" aria-live="polite">A local music player for your personal library.</p>`)
       ];
     }
 
@@ -823,9 +954,11 @@
       document.querySelectorAll(".settings-category").forEach((button) => {
         button.classList.toggle("active", button.dataset.settingsCategory === activeSettingsCategory && !query);
       });
+      const eqCard = document.getElementById("eq-card");
+      if (eqCard && eqCard.parentElement !== eqCardHolder) eqCardHolder.appendChild(eqCard);
       const catalog = settingsCatalog();
       const items = query
-        ? catalog.filter((card) => `${card.category} ${card.title} ${card.description}`.toLowerCase().includes(query))
+        ? catalog.filter((card) => `${card.category} ${card.title} ${card.description} ${card.control} ${card.control.replace(/<[^>]*>/g, " ")}`.toLowerCase().includes(query))
         : catalog.filter((card) => card.category === activeSettingsCategory);
       const content = document.getElementById("settings-content");
       content.replaceChildren();
@@ -848,6 +981,9 @@
       items.forEach((item) => {
         const card = document.createElement("article");
         card.className = "setting-card";
+        if ((item.category === "Audio" && item.title === "Equalizer & Sound FX") || item.category === "About") {
+          card.classList.add("setting-card-full");
+        }
         const copy = document.createElement("div");
         copy.className = "setting-card-copy";
         if (query) {
@@ -867,11 +1003,142 @@
         card.append(copy, controls);
         content.appendChild(card);
       });
+      const eqHost = content.querySelector("#eq-card-host");
+      if (eqHost && eqCard) eqHost.appendChild(eqCard);
+      if (content.querySelector("#storage-stat")) {
+        void updateStorageEstimate();
+      }
+      if (content.querySelector("#hidden-track-list")) {
+        renderHiddenTrackManager(content.querySelector("#hidden-track-list"));
+      }
+      if (content.querySelector("#lastfm-backend-status") && !lastFmBackendStatus.checked) {
+        void refreshLastFmBackendStatus();
+      }
+      if (content.querySelector("[data-youtube-client-id]") && !youtubeAccessToken &&
+        !youtubeOAuthReady && !youtubeOAuthLoading) {
+        const connectButton = content.querySelector('[data-action="youtube-connect"]');
+        youtubeOAuthLoading = true;
+        if (connectButton) {
+          connectButton.disabled = true;
+          connectButton.textContent = "Loading sign-in…";
+        }
+        void loadGoogleIdentityServices().then(() => {
+          youtubeOAuthReady = true;
+          youtubeOAuthLoading = false;
+          if (connectButton && connectButton.isConnected) {
+            connectButton.disabled = false;
+            connectButton.textContent = "Add";
+          }
+        }).catch((error) => {
+          youtubeOAuthLoading = false;
+          console.warn("Google sign-in could not be preloaded:", error);
+          if (connectButton && connectButton.isConnected) {
+            connectButton.disabled = false;
+            connectButton.textContent = "Add";
+          }
+        });
+      }
+      if (content.querySelector("#addon-source-list")) {
+        renderAddonSources(content.querySelector("#addon-source-list"));
+      }
+    }
+
+    async function updateStorageEstimate() {
+      const stat = document.getElementById("storage-stat");
+      if (!stat) return;
+      try {
+        const database = await openPlaylistDatabase();
+        const bytes = await new Promise((resolve, reject) => {
+          const transaction = database.transaction("audio", "readonly");
+          const request = transaction.objectStore("audio").openCursor();
+          let total = 0;
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) return resolve(total);
+            const record = cursor.value;
+            if (record && record.blob instanceof Blob) total += record.blob.size;
+            cursor.continue();
+          };
+          request.onerror = () => reject(request.error || new Error("Unable to measure cached audio."));
+        });
+        stat.textContent = `${formatBytes(localStorageUsage())} local · ${formatBytes(bytes)} IndexedDB`;
+      } catch (error) {
+        console.error("Cached data size could not be measured:", error);
+        stat.textContent = `${formatBytes(localStorageUsage())} local · IndexedDB size unavailable`;
+      }
+    }
+
+    function renderHiddenTrackManager(container) {
+      if (!container) return;
+      container.replaceChildren();
+      const availableTracks = tracks.filter((track) => !settingsState.hiddenTrackIds.includes(track.id));
+      if (availableTracks.length) {
+        const select = document.createElement("select");
+        select.className = "setting-list-select";
+        select.setAttribute("aria-label", "Choose a track to hide from recommendations");
+        availableTracks.forEach((track) => {
+          const option = document.createElement("option");
+          option.value = track.id;
+          option.textContent = `${track.title} — ${track.artist}`;
+          select.appendChild(option);
+        });
+        const hideButton = document.createElement("button");
+        hideButton.type = "button";
+        hideButton.className = "setting-button";
+        hideButton.dataset.action = "hide-track";
+        hideButton.textContent = "Hide track";
+        container.append(select, hideButton);
+      }
+      const hidden = settingsState.hiddenTrackIds.map((id) => tracks.find((track) => track.id === id)).filter(Boolean);
+      if (!hidden.length) {
+        const empty = document.createElement("p");
+        empty.className = "setting-note";
+        empty.textContent = "No tracks are hidden.";
+        container.appendChild(empty);
+      }
+      hidden.forEach((track) => {
+        const row = document.createElement("div");
+        row.className = "setting-list-row";
+        const title = document.createElement("span");
+        title.textContent = `${track.title} — ${track.artist}`;
+        const restore = document.createElement("button");
+        restore.type = "button";
+        restore.className = "setting-button";
+        restore.dataset.action = "restore-track";
+        restore.dataset.trackId = track.id;
+        restore.textContent = "Restore";
+        row.append(title, restore);
+        container.appendChild(row);
+      });
+    }
+
+    function renderAddonSources(container) {
+      if (!container) return;
+      container.replaceChildren();
+      if (!settingsState.addonSources.length) {
+        const empty = document.createElement("p");
+        empty.className = "setting-note";
+        empty.textContent = "No add-on sources have been added.";
+        container.appendChild(empty);
+      }
+      settingsState.addonSources.forEach((url, index) => {
+        const row = document.createElement("div");
+        row.className = "setting-list-row";
+        const label = document.createElement("span");
+        label.textContent = url;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "setting-button";
+        remove.dataset.action = "remove-addon";
+        remove.dataset.addonIndex = String(index);
+        remove.textContent = "Remove";
+        row.append(label, remove);
+        container.appendChild(row);
+      });
     }
 
     function openSettingsView() {
       closeNowPlaying();
-      if (eqOverlay.classList.contains("open")) setEqOverlayOpen(false);
       activeSettingsCategory = "General";
       document.getElementById("settings-search").value = "";
       settingsView.hidden = false;
@@ -904,11 +1171,57 @@
           option.setAttribute("aria-pressed", String(selected));
         });
       }
+      if (key === "theme" || key === "amoledBlack" || key === "hazeMaterial" || key === "hazeIntensity" || key === "nowPlayingAmbient") {
+        applyAppearanceSettings();
+      }
+      if (key === "dynamicArtworkTheme") {
+        applyAppearanceSettings();
+        if (value) updateDynamicArtworkAccent(tracks[activeTrack]);
+      }
+      if (key === "lastFmThreshold") {
+        const label = document.querySelector('.setting-range input[data-setting="lastFmThreshold"]');
+        if (label) label.parentElement.querySelector("span").textContent = `Scrobble at ${value}% of track`;
+      }
+      if (key === "downloadLocation") {
+        const label = document.getElementById("download-location-label");
+        if (label) label.textContent = value;
+      }
+      if (key === "lastFmScrobbling" && value && (!settingsState.lastFmApiKey || !settingsState.lastFmSessionKey)) {
+        settingsState.lastFmScrobbling = false;
+        const toggle = document.querySelector('[data-setting="lastFmScrobbling"]');
+        if (toggle) toggle.checked = false;
+        showToast("Connect your Last.fm account before enabling scrobbling.");
+      }
+      if (key === "lastFmScrobbling" && !settingsState.lastFmScrobbling) {
+        lastFmNowPlayingTrackId = "";
+      }
+      if (key === "lastFmNowPlaying" && !value) lastFmNowPlayingTrackId = "";
+      if ((key === "lastFmScrobbling" || key === "lastFmNowPlaying") &&
+        settingsState.lastFmScrobbling && settingsState.lastFmNowPlaying && !audio.paused) {
+        void updateLastFmNowPlaying();
+      }
       if (key === "defaultVolume") {
         document.getElementById("volume").value = String(value);
         audio.volume = value;
       }
+      if (key === "timedMix" && outputGain) {
+        const now = audioContext.currentTime;
+        outputGain.gain.cancelScheduledValues(now);
+        outputGain.gain.setTargetAtTime(value ? outputGain.gain.value : 1, now, .04);
+        if (!value) mixFadeScheduledForTrack = null;
+      }
       persistSettings();
+    }
+
+    function applyAppearanceSettings() {
+      document.body.classList.toggle("theme-pearl", settingsState.theme === "Pearl");
+      document.body.classList.toggle("theme-custom", settingsState.theme === "Custom");
+      document.body.classList.toggle("amoled-black", settingsState.amoledBlack);
+      document.body.classList.toggle("haze-solid", settingsState.hazeMaterial === "Solid");
+      document.body.dataset.hazeIntensity = settingsState.hazeIntensity.toLowerCase();
+      nowPlayingOverlay.classList.toggle("winui-ambient", settingsState.nowPlayingAmbient === "WinUI");
+      document.documentElement.style.setProperty("--accent", settingsState.accentColor);
+      document.querySelector('meta[name="theme-color"]')?.setAttribute("content", settingsState.theme === "Pearl" ? "#f5f5f5" : settingsState.amoledBlack ? "#000000" : "#121212");
     }
 
     async function clearCachedData() {
@@ -934,6 +1247,461 @@
       }
     }
 
+    async function reorganizeDownloads() {
+      if (!downloadDirectoryHandle) {
+        showToast("Choose a save location before reorganizing files.");
+        return;
+      }
+      if (typeof downloadDirectoryHandle.createWritable !== "function") {
+        showToast("Writing to the selected folder is not supported by this browser.");
+        return;
+      }
+      try {
+        const database = await openPlaylistDatabase();
+        const records = await new Promise((resolve, reject) => {
+          const request = database.transaction("audio", "readonly").objectStore("audio").getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error || new Error("Unable to read saved audio."));
+        });
+        if (!records.length) {
+          showToast("There are no locally saved audio files to reorganize.");
+          return;
+        }
+        if (!window.confirm(`Write ${records.length} saved audio ${records.length === 1 ? "file" : "files"} to the selected folder?`)) return;
+        let written = 0;
+        for (const record of records) {
+          const track = tracks.find((item) => item.id === record.id);
+          if (!track || !(record.blob instanceof Blob)) continue;
+          let folder = downloadDirectoryHandle;
+          const parts = settingsState.folderLayout === "Artist" ? [track.artist]
+            : settingsState.folderLayout === "Album" ? [track.artist, track.album] : [];
+          for (const part of parts) {
+            const safePart = String(part || "Unknown").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "Unknown";
+            folder = await folder.getDirectoryHandle(safePart, { create: true });
+          }
+          const extension = String(track.format || record.blob.type.split("/").pop() || "audio").replace(/[^a-z0-9]/gi, "").toLowerCase();
+          const filename = `${String(track.title || "Track").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "Track"}.${extension}`;
+          const fileHandle = await folder.getFileHandle(filename, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(record.blob);
+          await writable.close();
+          if (settingsState.downloadLyrics && Array.isArray(track.lyrics)) {
+            const syncedLines = track.lyrics.filter((line) => Number.isFinite(line.time));
+            if (syncedLines.length) {
+              const lrc = syncedLines.map((line) => {
+                const minutes = Math.floor(line.time / 60);
+                const seconds = line.time - minutes * 60;
+                const wholeSeconds = Math.floor(seconds);
+                const centiseconds = Math.floor((seconds - wholeSeconds) * 100);
+                return `[${String(minutes).padStart(2, "0")}:${String(wholeSeconds).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}]${line.text}`;
+              }).join("\n");
+              const lyricHandle = await folder.getFileHandle(`${filename.replace(/\.[^.]+$/, "")}.lrc`, { create: true });
+              const lyricWriter = await lyricHandle.createWritable();
+              await lyricWriter.write(lrc);
+              await lyricWriter.close();
+            }
+          }
+          written += 1;
+        }
+        showToast(`${written} saved ${written === 1 ? "file" : "files"} reorganized.`);
+      } catch (error) {
+        console.error("Saved audio could not be reorganized:", error);
+        showToast("Unable to reorganize saved audio in the selected folder.");
+      }
+    }
+
+    function backendBaseUrl() {
+      const configuredUrl = settingsState.integrationsBackendUrl.trim();
+      const candidate = configuredUrl || (/^https?:$/.test(window.location.protocol) ? window.location.origin : "");
+      if (!candidate) throw new Error("Run the MusicHeaven Node server or enter its HTTPS URL in Backend API URL.");
+      let parsed;
+      try {
+        parsed = new URL(candidate);
+      } catch {
+        throw new Error("Enter a valid backend URL.");
+      }
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        throw new Error("Backend URL must use HTTPS (HTTP is allowed for local development).");
+      }
+      if (parsed.protocol === "http:" &&
+        !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)) {
+        throw new Error("Use HTTPS for remote backend URLs so account session keys are not sent in clear text.");
+      }
+      if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+        throw new Error("Enter the backend origin only, without a path, query, or fragment.");
+      }
+      return parsed.origin;
+    }
+
+    async function backendRequest(path, body) {
+      const response = await fetch(`${backendBaseUrl()}${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: body === undefined ? {} : { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error(`Backend returned an unreadable response (HTTP ${response.status}).`);
+      }
+      if (!response.ok) throw new Error(result.error || `Backend returned HTTP ${response.status}.`);
+      return result;
+    }
+
+    async function refreshLastFmBackendStatus() {
+      const status = document.getElementById("lastfm-backend-status");
+      try {
+        lastFmBackendStatus = { available: true, ...(await backendRequest("/api/config")) };
+        lastFmBackendStatus.checked = true;
+        if (status) {
+          status.textContent = lastFmBackendStatus.lastFmSecretConfigured
+            ? "Backend ready; shared secret configured on server."
+            : "Backend online; set LASTFM_SHARED_SECRET on the server before connecting.";
+        }
+      } catch (error) {
+        lastFmBackendStatus = { available: false, checked: true, lastFmSecretConfigured: false };
+        if (status) status.textContent = error.message || "Backend is not reachable.";
+      }
+    }
+
+    async function saveLastFmCredentials() {
+      const keyInput = document.querySelector("[data-lastfm-key]");
+      const backendInput = document.querySelector("[data-backend-url]");
+      const apiKey = keyInput ? keyInput.value.trim() : settingsState.lastFmApiKey;
+      if (backendInput) settingsState.integrationsBackendUrl = backendInput.value.trim().replace(/\/+$/, "");
+      if (!apiKey) {
+        showToast("Enter your Last.fm API key.");
+        return;
+      }
+      try {
+        await backendRequest("/api/lastfm/validate", { apiKey });
+        settingsState.lastFmApiKey = apiKey;
+        persistSettings();
+        await refreshLastFmBackendStatus();
+        showToast("Last.fm API key validated. Connect your account to enable scrobbling.");
+      } catch (error) {
+        console.error("Last.fm API key validation failed:", error);
+        showToast(error.message || "Unable to validate Last.fm API key.");
+      }
+    }
+
+    async function connectLastFm() {
+      const apiKeyInput = document.querySelector("[data-lastfm-key]");
+      const backendInput = document.querySelector("[data-backend-url]");
+      const apiKey = apiKeyInput ? apiKeyInput.value.trim() : settingsState.lastFmApiKey;
+      if (backendInput) settingsState.integrationsBackendUrl = backendInput.value.trim().replace(/\/+$/, "");
+      if (!apiKey) {
+        showToast("Enter and validate your Last.fm API key first.");
+        return;
+      }
+      const popup = window.open("about:blank", "musicheaven-lastfm-auth", "popup,width=560,height=760");
+      if (!popup) {
+        showToast("Allow popups for MusicHeaven to authorize Last.fm.");
+        return;
+      }
+      try {
+        const result = await backendRequest("/api/lastfm/auth-token", { apiKey });
+        lastFmAuthToken = result.token;
+        settingsState.lastFmApiKey = apiKey;
+        persistSettings();
+        popup.location.assign(result.authorizationUrl);
+        renderSettingsView();
+        showToast("Authorize MusicHeaven in the Last.fm tab, then return and verify.");
+      } catch (error) {
+        popup.close();
+        console.error("Last.fm authorization could not start:", error);
+        showToast(error.message || "Unable to start Last.fm authorization.");
+      }
+    }
+
+    async function verifyLastFmAuthorization() {
+      if (!lastFmAuthToken) {
+        await connectLastFm();
+        return;
+      }
+      try {
+        const result = await backendRequest("/api/lastfm/session", {
+          apiKey: settingsState.lastFmApiKey,
+          token: lastFmAuthToken
+        });
+        settingsState.lastFmSessionKey = result.sessionKey;
+        settingsState.lastFmUsername = result.username;
+        settingsState.lastFmScrobbling = true;
+        lastFmAuthToken = "";
+        persistSettings();
+        renderSettingsView();
+        if (!audio.paused) void updateLastFmNowPlaying();
+        showToast(`Last.fm connected as ${result.username}.`);
+      } catch (error) {
+        console.error("Last.fm account authorization failed:", error);
+        showToast(error.message || "Unable to connect the Last.fm account.");
+      }
+    }
+
+    async function sendLastFmTrackEvent(eventName, track, duration) {
+      if (!settingsState.lastFmApiKey || !settingsState.lastFmSessionKey) {
+        throw new Error("Connect a Last.fm account before sending track updates.");
+      }
+      await backendRequest("/api/lastfm/track", {
+        apiKey: settingsState.lastFmApiKey,
+        sessionKey: settingsState.lastFmSessionKey,
+        event: eventName,
+        track: {
+          title: track.title,
+          artist: track.artist,
+          album: track.album || "",
+          duration: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : undefined,
+          timestamp: lastFmTrackStartedAt || Math.floor(Date.now() / 1000)
+        }
+      });
+    }
+
+    async function updateLastFmNowPlaying() {
+      const track = tracks[activeTrack];
+      if (!settingsState.lastFmScrobbling || !settingsState.lastFmNowPlaying ||
+        !settingsState.lastFmSessionKey || !track || !audio.currentSrc ||
+        lastFmNowPlayingTrackId === track.id) return;
+      lastFmNowPlayingTrackId = track.id;
+      try {
+        await sendLastFmTrackEvent("now-playing", track, audio.duration);
+      } catch (error) {
+        if (lastFmNowPlayingTrackId === track.id) lastFmNowPlayingTrackId = "";
+        console.error("Last.fm now-playing update failed:", error);
+        showToast(error.message || "Unable to send Last.fm now-playing update.");
+      }
+    }
+
+    async function maybeScrobbleCurrentTrack() {
+      const track = tracks[activeTrack];
+      if (!settingsState.lastFmScrobbling || !settingsState.lastFmSessionKey ||
+        !track || !Number.isFinite(audio.duration) || audio.duration <= 30 ||
+        lastFmScrobbledTrackId === track.id) return;
+      if (audio.currentTime / audio.duration * 100 < settingsState.lastFmThreshold) return;
+      lastFmScrobbledTrackId = track.id;
+      try {
+        await sendLastFmTrackEvent("scrobble", track, audio.duration);
+        logDiagnostic(`Scrobbled "${track.title}" to Last.fm`);
+      } catch (error) {
+        console.error("Last.fm scrobble failed:", error);
+        showToast(error.message || "Unable to scrobble this track to Last.fm.");
+      }
+    }
+
+    function loadGoogleIdentityServices() {
+      if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+        return Promise.resolve(window.google.accounts.oauth2);
+      }
+      if (youtubeClientScriptPromise) return youtubeClientScriptPromise;
+      youtubeClientScriptPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://accounts.google.com/gsi/client";
+        script.async = true;
+        script.onload = () => {
+          if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+            resolve(window.google.accounts.oauth2);
+          } else {
+            reject(new Error("Google Identity Services did not initialize."));
+          }
+        };
+        script.onerror = () => reject(new Error("Unable to load Google Identity Services."));
+        document.head.appendChild(script);
+      }).catch((error) => {
+        youtubeClientScriptPromise = null;
+        throw error;
+      });
+      return youtubeClientScriptPromise;
+    }
+
+    async function connectYouTube() {
+      const clientIdInput = document.querySelector("[data-youtube-client-id]");
+      if (clientIdInput) settingsState.youtubeOAuthClientId = clientIdInput.value.trim();
+      const clientId = settingsState.youtubeOAuthClientId;
+      if (!clientId) {
+        showToast("Enter your Google OAuth Client ID first.");
+        return;
+      }
+      try {
+        persistSettings();
+        const oauth = window.google && window.google.accounts && window.google.accounts.oauth2
+          ? window.google.accounts.oauth2
+          : await loadGoogleIdentityServices();
+        youtubeOAuthReady = true;
+        youtubeTokenClient = oauth.initTokenClient({
+          client_id: clientId,
+          scope: "https://www.googleapis.com/auth/youtube",
+          callback: (response) => {
+            if (response.error || !response.access_token) {
+              showToast(response.error_description || response.error || "Google authorization failed.");
+              return;
+            }
+            youtubeAccessToken = response.access_token;
+            settingsState.youtubeConnected = true;
+            renderSettingsView();
+            showToast("YouTube account connected for this browser session.");
+          },
+          error_callback: (error) => {
+            showToast(error.message || "Google authorization popup failed.");
+          }
+        });
+        youtubeTokenClient.requestAccessToken({ prompt: "consent" });
+      } catch (error) {
+        console.error("YouTube account connection failed:", error);
+        showToast(error.message || "Unable to connect the YouTube account.");
+      }
+    }
+
+    async function youtubeApiRequest(resource, params, method = "GET", body) {
+      if (!youtubeAccessToken) throw new Error("Add your Google account in Integrations first.");
+      const url = new URL(`https://www.googleapis.com/youtube/v3/${resource}`);
+      Object.entries(params || {}).forEach(([key, value]) => url.searchParams.set(key, value));
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${youtubeAccessToken}`,
+          ...(body ? { "Content-Type": "application/json" } : {})
+        },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        const message = result.error && result.error.message;
+        if (response.status === 401) {
+          youtubeAccessToken = "";
+          settingsState.youtubeConnected = false;
+        }
+        throw new Error(message || `YouTube Data API returned HTTP ${response.status}.`);
+      }
+      return result;
+    }
+
+    async function getOrCreateYouTubePlaylist() {
+      if (settingsState.youtubePlaylistId) {
+        const stored = await youtubeApiRequest("playlists", {
+          part: "snippet,status",
+          id: settingsState.youtubePlaylistId
+        });
+        const playlist = stored.items && stored.items[0];
+        if (playlist) {
+          if (playlist.status && playlist.status.privacyStatus !== "private") {
+            await youtubeApiRequest("playlists", { part: "snippet,status" }, "PUT", {
+              id: playlist.id,
+              snippet: {
+                title: playlist.snippet.title,
+                description: playlist.snippet.description || ""
+              },
+              status: { privacyStatus: "private" }
+            });
+          }
+          return playlist.id;
+        }
+        settingsState.youtubePlaylistId = "";
+        settingsState.youtubeSyncedTrackIds = [];
+        persistSettings();
+      }
+      let pageToken = "";
+      do {
+        const params = { part: "snippet,status", mine: "true", maxResults: "50" };
+        if (pageToken) params.pageToken = pageToken;
+        const result = await youtubeApiRequest("playlists", params);
+        const playlist = (result.items || []).find((item) =>
+          item.snippet && item.snippet.title === "MusicHeaven Library");
+        if (playlist) {
+          settingsState.youtubePlaylistId = playlist.id;
+          if (!playlist.status || playlist.status.privacyStatus !== "private") {
+            await youtubeApiRequest("playlists", { part: "snippet,status" }, "PUT", {
+              id: playlist.id,
+              snippet: {
+                title: playlist.snippet.title,
+                description: playlist.snippet.description || ""
+              },
+              status: { privacyStatus: "private" }
+            });
+          }
+          persistSettings();
+          return playlist.id;
+        }
+        pageToken = result.nextPageToken || "";
+      } while (pageToken);
+
+      const created = await youtubeApiRequest("playlists", { part: "snippet,status" }, "POST", {
+        snippet: { title: "MusicHeaven Library", description: "Synced from the MusicHeaven local library." },
+        status: { privacyStatus: "private" }
+      });
+      if (!created.id) throw new Error("YouTube did not return the new playlist ID.");
+      settingsState.youtubePlaylistId = created.id;
+      persistSettings();
+      return created.id;
+    }
+
+    async function syncYouTubeLibrary(button) {
+      if (!settingsState.youtubeMusicSync) {
+        showToast("Turn on YouTube Music sync in Library first.");
+        return;
+      }
+      if (!youtubeAccessToken) {
+        showToast("Add your Google account in Integrations first.");
+        return;
+      }
+      const localTracks = tracks.filter((track) => track.localFile || track.file || track.sourceUri);
+      if (!localTracks.length) {
+        showToast("Import local audio tracks before syncing to YouTube.");
+        return;
+      }
+      youtubeSyncInProgress = true;
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Syncing…";
+      }
+      try {
+        const playlistId = await getOrCreateYouTubePlaylist();
+        const syncedIds = new Set(settingsState.youtubeSyncedTrackIds);
+        const pending = localTracks.filter((track) => !syncedIds.has(track.id)).slice(0, 20);
+        if (!pending.length) {
+          showToast("All imported tracks are already synced to the private playlist.");
+          return;
+        }
+        let added = 0;
+        let notFound = 0;
+        for (const track of pending) {
+          const artist = ["Local audio", "Unknown artist"].includes(track.artist) ? "" : track.artist;
+          const query = [track.title, artist].filter(Boolean).join(" ");
+          const search = await youtubeApiRequest("search", {
+            part: "snippet",
+            type: "video",
+            maxResults: "1",
+            q: query
+          });
+          const videoId = search.items && search.items[0] && search.items[0].id && search.items[0].id.videoId;
+          if (!videoId) {
+            notFound += 1;
+            continue;
+          }
+          await youtubeApiRequest("playlistItems", { part: "snippet" }, "POST", {
+            snippet: {
+              playlistId,
+              resourceId: { kind: "youtube#video", videoId }
+            }
+          });
+          syncedIds.add(track.id);
+          added += 1;
+          settingsState.youtubeSyncedTrackIds = Array.from(syncedIds);
+          persistSettings();
+        }
+        const remaining = localTracks.filter((track) => !syncedIds.has(track.id)).length;
+        showToast(`${added} track${added === 1 ? "" : "s"} added${notFound ? `; ${notFound} not found` : ""}${remaining ? `; ${remaining} remaining for later` : ""}.`);
+      } catch (error) {
+        console.error("YouTube private playlist sync failed:", error);
+        showToast(error.message || "Unable to sync tracks to YouTube.");
+      } finally {
+        youtubeSyncInProgress = false;
+        if (button && button.isConnected) {
+          button.disabled = false;
+          button.textContent = "Sync now";
+        }
+      }
+    }
+
     async function importBackup(file) {
       if (!file) return;
       try {
@@ -951,7 +1719,11 @@
         Object.keys(defaultSettings).forEach((key) => {
           if (typeof payload.settings[key] === typeof defaultSettings[key]) importedSettings[key] = payload.settings[key];
         });
-        if (!["#3ea6ff", "#6ee7d8", "#c18cff"].includes(importedSettings.accentColor)) {
+        importedSettings.lastFmSessionKey = "";
+        importedSettings.lastFmUsername = "";
+        importedSettings.lastFmScrobbling = false;
+        importedSettings.youtubeConnected = false;
+        if (typeof importedSettings.accentColor !== "string" || !/^#[0-9a-f]{6}$/i.test(importedSettings.accentColor)) {
           importedSettings.accentColor = defaultSettings.accentColor;
         }
         importedSettings.defaultVolume = Math.max(0, Math.min(1, Number(importedSettings.defaultVolume) || 0));
@@ -1077,8 +1849,18 @@
     function setTrack(index, autoplay) {
       if (!playbackTrackIndices.includes(index)) index = playbackTrackIndices[0];
       activeTrack = index;
+      lastFmNowPlayingTrackId = "";
+      lastFmScrobbledTrackId = "";
+      lastFmTrackStartedAt = 0;
       if (shuffleOn) shuffleQueue = shuffleQueue.filter((queuedIndex) => queuedIndex !== activeTrack);
       const track = tracks[activeTrack];
+      mixFadeScheduledForTrack = null;
+      if (outputGain && settingsState.timedMix) {
+        const now = audioContext.currentTime;
+        outputGain.gain.cancelScheduledValues(now);
+        outputGain.gain.setValueAtTime(0, now);
+        outputGain.gain.linearRampToValueAtTime(1, now + 1.25);
+      }
       document.getElementById("current-title").textContent = track.title;
       document.getElementById("current-artist").textContent = track.artist;
       document.getElementById("player-art").className = `player-art art-${activeTrack % 8 + 1}`;
@@ -1098,6 +1880,7 @@
         seek.value = "0";
         setSeekFill(0);
       }
+
       updatePlayState();
       updateNowPlaying();
       updateNowPlayingProgress();
@@ -1105,6 +1888,18 @@
         if (track.src) togglePlayback();
         else showToast("Demo track—add an audio file to play it.");
       }
+    }
+
+    function scheduleTimedMixFadeOut() {
+      if (!settingsState.timedMix || !outputGain || !Number.isFinite(audio.duration) ||
+        audio.duration <= 0 || mixFadeScheduledForTrack === tracks[activeTrack]?.id) return;
+      const remaining = audio.duration - audio.currentTime;
+      if (remaining > 1.8 || remaining < 0) return;
+      const now = audioContext.currentTime;
+      outputGain.gain.cancelScheduledValues(now);
+      outputGain.gain.setValueAtTime(outputGain.gain.value, now);
+      outputGain.gain.linearRampToValueAtTime(0, now + Math.max(.05, remaining));
+      mixFadeScheduledForTrack = tracks[activeTrack]?.id;
     }
 
     function playTrackFromCard(index) {
@@ -1905,15 +2700,6 @@
       document.getElementById("eq-clarity-view").hidden = bandsActive;
     }
 
-    function setEqOverlayOpen(open) {
-      eqOverlay.classList.toggle("open", open);
-      eqOverlay.setAttribute("aria-hidden", String(!open));
-      document.body.classList.toggle("eq-open", open);
-      eqNavButton.setAttribute("aria-expanded", String(open));
-      if (open) document.getElementById("eq-toggle").focus();
-      else eqNavButton.focus();
-    }
-
     function resetEqToPreset() {
       eqActivePreset = eqResetPreset;
       eqPresetPill = eqResetPill;
@@ -1934,7 +2720,6 @@
       document.getElementById("eq-reset").addEventListener("click", resetEqToPreset);
       document.getElementById("eq-tab-bands").addEventListener("click", () => setEqualizerTab("bands"));
       document.getElementById("eq-tab-clarity").addEventListener("click", () => setEqualizerTab("clarity"));
-      document.getElementById("eq-back").addEventListener("click", () => setEqOverlayOpen(false));
       document.getElementById("clarity-profiles").addEventListener("click", (event) => {
         const profile = event.target.closest("[data-profile]");
         if (profile) setClarityProfile(profile.dataset.profile);
@@ -1956,12 +2741,6 @@
         eqResetValues = [...values];
         updateEqValuesFromBase();
         persistEqSettings();
-      });
-      eqOverlay.addEventListener("click", (event) => {
-        if (event.target === eqOverlay) setEqOverlayOpen(false);
-      });
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && eqOverlay.classList.contains("open")) setEqOverlayOpen(false);
       });
     }
 
@@ -1986,6 +2765,7 @@
       analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
       frequencyData = new Uint8Array(analyser.frequencyBinCount);
+      outputGain = audioContext.createGain();
       audioSource = audioContext.createMediaElementSource(audio);
       eqFilters = eqBands.map((band) => {
         const filter = audioContext.createBiquadFilter();
@@ -2012,7 +2792,8 @@
       filterChain.forEach((filter, index) => {
         filter.connect(index < filterChain.length - 1 ? filterChain[index + 1] : analyser);
       });
-      analyser.connect(audioContext.destination);
+      analyser.connect(outputGain);
+      outputGain.connect(audioContext.destination);
       applyEqValues();
     }
 
@@ -2178,6 +2959,7 @@
       updateMediaSessionPositionState();
     });
     audio.addEventListener("timeupdate", () => {
+      scheduleTimedMixFadeOut();
       elapsed.textContent = formatTime(audio.currentTime);
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         const progress = audio.currentTime / audio.duration * 100;
@@ -2187,8 +2969,13 @@
       updateNowPlayingProgress();
       updateSyncedLyrics();
       updateMediaSessionPositionState();
+      void maybeScrobbleCurrentTrack();
     });
-    audio.addEventListener("play", updatePlayState);
+    audio.addEventListener("play", () => {
+      if (!lastFmTrackStartedAt) lastFmTrackStartedAt = Math.floor(Date.now() / 1000);
+      updatePlayState();
+      void updateLastFmNowPlaying();
+    });
     audio.addEventListener("pause", updatePlayState);
     audio.addEventListener("durationchange", updateMediaSessionPositionState);
     audio.addEventListener("ratechange", updateMediaSessionPositionState);
@@ -2266,13 +3053,52 @@
     document.getElementById("settings-search").addEventListener("input", renderSettingsView);
     document.getElementById("settings-content").addEventListener("change", (event) => {
       const control = event.target.closest("[data-setting]");
+      if (control) {
+        updateSetting(control.dataset.setting, control.type === "checkbox"
+          ? control.checked
+          : control.type === "range" ? Number(control.value) : control.value);
+        return;
+      }
+      const backendUrl = event.target.closest("[data-backend-url]");
+      if (backendUrl) {
+        settingsState.integrationsBackendUrl = backendUrl.value.trim().replace(/\/+$/, "");
+        lastFmBackendStatus.checked = false;
+        persistSettings();
+        return;
+      }
+      const youtubeClientId = event.target.closest("[data-youtube-client-id]");
+      if (youtubeClientId) {
+        settingsState.youtubeOAuthClientId = youtubeClientId.value.trim();
+        persistSettings();
+      }
+    });
+    document.getElementById("settings-content").addEventListener("input", (event) => {
+      const control = event.target.closest('[data-setting][type="range"], [data-custom-accent]');
       if (!control) return;
-      updateSetting(control.dataset.setting, control.type === "checkbox" ? control.checked : Number(control.value));
+      if (control.matches("[data-custom-accent]")) {
+        settingsState.customAccentColor = control.value;
+        updateSetting("accentColor", control.value);
+      } else {
+        updateSetting(control.dataset.setting, Number(control.value));
+      }
     });
     document.getElementById("settings-content").addEventListener("click", async (event) => {
       const accent = event.target.closest("[data-accent]");
       if (accent) {
         updateSetting("accentColor", accent.dataset.accent);
+        return;
+      }
+      const choice = event.target.closest("[data-choice-key]");
+      if (choice) {
+        const key = choice.dataset.choiceKey;
+        const value = choice.dataset.choiceValue;
+        if (key === "theme" && value === "Pearl") updateSetting("accentColor", "#3ea6ff");
+        updateSetting(key, value);
+        document.querySelectorAll(`[data-choice-key="${key}"]`).forEach((button) => {
+          const selected = button.dataset.choiceValue === value;
+          button.classList.toggle("selected", selected);
+          button.setAttribute("aria-pressed", String(selected));
+        });
         return;
       }
       const action = event.target.closest("[data-action]");
@@ -2290,7 +3116,13 @@
           app: "MusicHeaven",
           version: 1,
           exportedAt: new Date().toISOString(),
-          settings: settingsState,
+          settings: {
+            ...settingsState,
+            lastFmSessionKey: "",
+            lastFmUsername: "",
+            lastFmScrobbling: false,
+            youtubeConnected: false
+          },
           playlist
         });
         logDiagnostic("Backup exported");
@@ -2308,6 +3140,93 @@
           events: diagnosticLogs
         });
         showToast("Diagnostic logs exported.");
+      } else if (action.dataset.action === "check-updates") {
+        await checkForAppUpdate(action);
+      } else if (action.dataset.action === "choose-download-location") {
+        if (typeof window.showDirectoryPicker !== "function") {
+          showToast("Folder selection is not supported by this browser.");
+          return;
+        }
+        try {
+          downloadDirectoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+          updateSetting("downloadLocation", downloadDirectoryHandle.name || "Selected folder");
+        } catch (error) {
+          if (error.name !== "AbortError") {
+            console.error("Download folder could not be selected:", error);
+            showToast("Unable to select the download folder.");
+          }
+        }
+      } else if (action.dataset.action === "reorganize-downloads") {
+        await reorganizeDownloads();
+      } else if (action.dataset.action === "youtube-sync") {
+        await syncYouTubeLibrary(action);
+      } else if (action.dataset.action === "youtube-connect") {
+        if (youtubeAccessToken) {
+          youtubeAccessToken = "";
+          settingsState.youtubeConnected = false;
+          renderSettingsView();
+          showToast("YouTube disconnected from this browser session.");
+        } else {
+          await connectYouTube();
+        }
+      } else if (action.dataset.action === "spotify-login") {
+        showToast("Spotify cookie login is not available in the browser-only build.");
+      } else if (action.dataset.action === "lastfm-save") {
+        await saveLastFmCredentials();
+      } else if (action.dataset.action === "lastfm-connect") {
+        if (lastFmAuthToken) await verifyLastFmAuthorization();
+        else await connectLastFm();
+      } else if (action.dataset.action === "lastfm-signout") {
+        settingsState.lastFmSessionKey = "";
+        settingsState.lastFmUsername = "";
+        settingsState.lastFmScrobbling = false;
+        lastFmAuthToken = "";
+        persistSettings();
+        renderSettingsView();
+        showToast("Last.fm account signed out.");
+      } else if (action.dataset.action === "lastfm-clear") {
+        settingsState.lastFmApiKey = "";
+        settingsState.lastFmSessionKey = "";
+        settingsState.lastFmUsername = "";
+        settingsState.lastFmScrobbling = false;
+        lastFmAuthToken = "";
+        persistSettings();
+        renderSettingsView();
+        showToast("Last.fm API key and account session cleared from this device.");
+      } else if (action.dataset.action === "add-addon") {
+        const value = window.prompt("Paste the full add-on URL:");
+        if (!value) return;
+        try {
+          const url = new URL(value.trim());
+          if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("URL must use http or https.");
+          if (settingsState.addonSources.includes(url.href)) {
+            showToast("That add-on URL is already in your list.");
+            return;
+          }
+          settingsState.addonSources.push(url.href);
+          persistSettings();
+          renderSettingsView();
+          showToast("Add-on URL saved. This build does not execute add-on sources.");
+        } catch (error) {
+          showToast(error.message || "Enter a valid add-on URL.");
+        }
+      } else if (action.dataset.action === "remove-addon") {
+        settingsState.addonSources.splice(Number(action.dataset.addonIndex), 1);
+        persistSettings();
+        renderSettingsView();
+      } else if (action.dataset.action === "hide-track") {
+        const select = action.parentElement.querySelector(".setting-list-select");
+        if (select && select.value) {
+          settingsState.hiddenTrackIds.push(select.value);
+          persistSettings();
+          renderHomeSections();
+          renderSettingsView();
+        }
+      } else if (action.dataset.action === "restore-track") {
+        settingsState.hiddenTrackIds = settingsState.hiddenTrackIds.filter((id) => id !== action.dataset.trackId);
+        persistSettings();
+        renderHomeSections();
+        renderSettingsView();
       }
     });
     document.getElementById("backup-input").addEventListener("change", (event) => {
@@ -2332,12 +3251,7 @@
         if (button.dataset.category) return;
         document.querySelectorAll(".nav-button").forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
-        if (button === eqNavButton) {
-          closeSettingsView();
-          closeNowPlaying();
-          setEqOverlayOpen(!eqOverlay.classList.contains("open"));
-        }
-        else if (button.dataset.view === "settings") openSettingsView();
+        if (button.dataset.view === "settings") openSettingsView();
         else if (button.dataset.view === "home") {
           closeSettingsView();
           closeNowPlaying();
@@ -2352,7 +3266,6 @@
           stage.scrollTop = 0;
           stage.scrollTo({ top: 0, behavior: "smooth" });
           window.scrollTo({ top: 0, behavior: "smooth" });
-          if (eqOverlay.classList.contains("open")) setEqOverlayOpen(false);
         } else if (button.dataset.view === "playlists") {
           closeSettingsView();
           closeNowPlaying();
@@ -2367,19 +3280,13 @@
           renderQueue();
           renderPlaylistHeading(libraryFolderName);
           document.getElementById("library-section").scrollIntoView({ behavior: "smooth", block: "start" });
-          if (eqOverlay.classList.contains("open")) setEqOverlayOpen(false);
-        } else if (eqOverlay.classList.contains("open")) {
-          closeSettingsView();
-          closeNowPlaying();
-          setEqOverlayOpen(false);
-          button.focus();
         }
       });
     });
 
     setupEqualizer();
     setupVisualizer();
-    document.documentElement.style.setProperty("--accent", settingsState.accentColor);
+    applyAppearanceSettings();
     document.body.classList.toggle("compact-library", settingsState.compactLibrary);
     document.body.classList.toggle("hide-library-metadata", !settingsState.showMetadata);
     logDiagnostic("Application initialized");
@@ -2392,26 +3299,57 @@
     });
 
 // --- Auto Update Checker ---
-const CURRENT_APP_VERSION = "1.0.0";
-const GIST_RAW_URL = "YOUR_GIST_RAW_URL_HERE";
+const CURRENT_APP_VERSION = "1.1.0";
+const RELEASES_API_URL = "https://api.github.com/repos/shimulsarker/MusicHeaven/releases/latest";
 
-async function checkForAppUpdate() {
-  try {
-    const response = await fetch(`${GIST_RAW_URL}?t=${new Date().getTime()}`);
-    const data = await response.json();
-
-    if (data.latestVersion && data.latestVersion !== CURRENT_APP_VERSION) {
-      const userConfirmed = window.confirm(
-        `New update available (v${data.latestVersion})!\n\n${data.releaseNotes}\n\nDo you want to download it now?`
-      );
-
-      if (userConfirmed && data.apkUrl) {
-        window.open(data.apkUrl, "_system");
-      }
-    }
-  } catch (error) {
-    console.error("Update check failed:", error);
+function compareVersionStrings(left, right) {
+  const leftParts = String(left).replace(/^v/i, "").split(/[.+-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = String(right).replace(/^v/i, "").split(/[.+-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
+  for (let index = 0; index < 3; index++) {
+    if (leftParts[index] !== rightParts[index]) return leftParts[index] > rightParts[index] ? 1 : -1;
   }
+  return 0;
 }
 
-window.addEventListener("DOMContentLoaded", checkForAppUpdate);
+async function checkForAppUpdate(button) {
+  const status = document.getElementById("update-check-status");
+  const originalLabel = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Checking…";
+  }
+  if (status) status.textContent = "Checking GitHub Releases…";
+  try {
+    const response = await fetch(RELEASES_API_URL, {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+    if (response.status === 404) {
+      if (status) status.textContent = "No MusicHeaven release has been published yet.";
+      showToast("No published MusicHeaven release was found.");
+      return;
+    }
+    if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
+    const release = await response.json();
+    const latestVersion = release.tag_name || release.name;
+    if (!latestVersion) throw new Error("The latest release has no version tag.");
+    if (compareVersionStrings(latestVersion, CURRENT_APP_VERSION) > 0) {
+      if (status) status.textContent = `MusicHeaven ${latestVersion} is available.`;
+      showToast(`MusicHeaven ${latestVersion} is available.`);
+      if (window.confirm(`MusicHeaven ${latestVersion} is available. Open the release page?`)) {
+        window.open(release.html_url || "https://github.com/shimulsarker/MusicHeaven/releases", "_blank", "noopener");
+      }
+    } else {
+      if (status) status.textContent = `You are using the latest version (v${CURRENT_APP_VERSION}).`;
+      showToast("MusicHeaven is up to date.");
+    }
+  } catch (error) {
+    console.error("MusicHeaven update check failed:", error);
+    if (status) status.textContent = "Unable to check for updates. Check your internet connection and try again.";
+    showToast(error.message || "Unable to check for updates.");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+}

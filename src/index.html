@@ -48,7 +48,6 @@
       <nav class="library-categories" aria-label="Music library"></nav>
       <button class="nav-button" aria-label="Playlists" data-view="playlists"><svg><use href="#i-music"/></svg><span>Playlists</span></button>
       <div class="sidebar-spacer"></div>
-      <button class="nav-button" aria-label="Equalizer" aria-expanded="false"><svg><use href="#i-eq"/></svg><span>Equalizer</span></button>
       <div class="sidebar-import-actions">
         <button id="open-folder" type="button"><svg><use href="#i-folder"/></svg><span>Import folder</span></button>
         <button id="playlist-add" type="button"><svg><use href="#i-plus"/></svg><span>Add songs</span></button>
@@ -228,11 +227,9 @@
   <input class="file-input" id="song-input" type="file" accept="audio/*" multiple tabindex="-1" aria-label="Choose audio files to add">
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <div class="eq-overlay" id="eq-overlay" aria-hidden="true">
-    <section class="eq-dialog" role="dialog" aria-modal="true" aria-labelledby="eq-dialog-title">
-      <div class="eq-card">
+  <div id="eq-card-holder" hidden>
+      <section class="eq-card" id="eq-card" aria-labelledby="eq-dialog-title">
         <div class="eq-card-heading">
-          <button class="eq-back" id="eq-back" type="button"><span aria-hidden="true">←</span> Back to Player</button>
           <div class="eq-card-mark"><svg><use href="#i-eq"/></svg></div>
           <div class="eq-card-titles">
             <h3 id="eq-dialog-title">Equalizer &amp; Sound FX</h3>
@@ -305,11 +302,9 @@
                 <span class="clarity-profile-dot"></span>
                 <span class="clarity-profile-copy"><strong>DAC</strong><small>Gentler air (-1.5 dB shelf, -1.0 dB exciter) for revealing external DAC chains.</small></span>
               </button>
-            </div>
-          </section>
+            </section>
         </div>
         <footer class="eq-footer"><span class="eq-info-icon">i</span><span>Hardware-accelerated 32-bit float biquad filter applied via Web Audio API.</span></footer>
-      </div>
     </section>
   </div>
 
