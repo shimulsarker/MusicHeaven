@@ -1,5 +1,6 @@
     const audio = document.getElementById("audio");
     const isAndroidPlatform = /Android/i.test(navigator.userAgent);
+    document.body.classList.toggle("android-platform", isAndroidPlatform);
     const mediaSession = "mediaSession" in navigator ? navigator.mediaSession : null;
     const defaultMediaArtwork = new URL("./favicon.png", document.baseURI).href;
     const stage = document.getElementById("stage");

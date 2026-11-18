@@ -1552,6 +1552,18 @@
       .settings-content { padding-right: 10px; padding-left: 10px; }
     }
 
+    body.android-platform .player-extra { display: none; }
+    @media (max-width: 780px) {
+      body.android-platform .player-bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+    }
+    @media (max-width: 580px) {
+      body.android-platform .main-content { padding-bottom: calc(145px + env(safe-area-inset-bottom)); }
+      body.android-platform .player-bar { height: calc(112px + env(safe-area-inset-bottom)); grid-template-rows: 44px 38px; gap: 2px; }
+      body.android-platform .now-playing-overlay,
+      body.android-platform .settings-view { bottom: calc(112px + env(safe-area-inset-bottom)); }
+      body.android-platform .toast { bottom: calc(121px + env(safe-area-inset-bottom)); }
+    }
+
     .now-playing-overlay {
       inset: 0;
       z-index: 40;
