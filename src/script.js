@@ -350,6 +350,14 @@
     }
 
     function renderLibraryCategories() {
+      const categoryIcons = {
+        Songs: "i-music",
+        Artists: "i-users",
+        Albums: "i-album",
+        Genres: "i-eq",
+        Folders: "i-folder",
+        "Liked Songs": "i-heart"
+      };
       categoryNavigation.replaceChildren();
       libraryCategories.forEach((category) => {
         const button = document.createElement("button");
@@ -359,7 +367,8 @@
         button.dataset.category = category;
         button.setAttribute("aria-label", category);
         button.setAttribute("aria-pressed", String(selected));
-        button.textContent = category;
+        button.innerHTML = `${icon(categoryIcons[category])}<span class="library-category-label"></span>`;
+        button.querySelector(".library-category-label").textContent = category;
         categoryNavigation.appendChild(button);
       });
     }
