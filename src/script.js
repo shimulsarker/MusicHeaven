@@ -1,4 +1,5 @@
     const audio = document.getElementById("audio");
+    const isAndroidPlatform = /Android/i.test(navigator.userAgent);
     const mediaSession = "mediaSession" in navigator ? navigator.mediaSession : null;
     const defaultMediaArtwork = new URL("./favicon.png", document.baseURI).href;
     const stage = document.getElementById("stage");
@@ -22,8 +23,6 @@
     let toastTimer;
     let nowPlayingCloseTimer;
     let audioContext;
-    let analyser;
-    let frequencyData;
     let audioSource;
     let outputGain;
     let mixFadeScheduledForTrack = null;
@@ -72,6 +71,7 @@
       accentColor: "#3ea6ff",
       defaultVolume: .72,
       timedMix: false,
+      androidDirectPlayback: true,
       downloadLyrics: true,
       downloadLocation: "Default location",
       folderLayout: "Flat",
@@ -124,12 +124,17 @@
       }
     }
     ["backgroundPlayback", "autoplayNext", "rememberVolume", "equalizerEnabled", "clarityEnabled",
-      "compactLibrary", "showMetadata", "highlightLyrics", "verboseLogging", "timedMix",
+      "compactLibrary", "showMetadata", "highlightLyrics", "verboseLogging", "timedMix", "androidDirectPlayback",
       "downloadLyrics", "podcasts", "youtubeMusicSync", "amoledBlack", "dynamicArtworkTheme",
       "lastFmScrobbling", "lastFmNowPlaying", "youtubeConnected",
       "spotifyConnected", "spotifyCanvas", "discordRichPresence"].forEach((key) => {
       if (typeof settingsState[key] !== "boolean") settingsState[key] = defaultSettings[key];
     });
+    if (isAndroidPlatform && settingsState.androidDirectPlayback) {
+      settingsState.equalizerEnabled = false;
+      settingsState.clarityEnabled = false;
+      settingsState.timedMix = false;
+    }
     settingsState.youtubeConnected = false;
     if (typeof settingsState.accentColor !== "string" || !/^#[0-9a-f]{6}$/i.test(settingsState.accentColor)) settingsState.accentColor = defaultSettings.accentColor;
     if (typeof settingsState.customAccentColor !== "string" || !/^#[0-9a-f]{6}$/i.test(settingsState.customAccentColor)) settingsState.customAccentColor = settingsState.accentColor;
@@ -928,6 +933,7 @@
 
         settingCard("Playback", "Playback behaviour", "Control what happens when a track finishes or the tab is backgrounded.", `${toggleControl("autoplayNext", "Automatically play next track")}${toggleControl("backgroundPlayback", "Continue playback in background")}`),
         settingCard("Playback", "Volume", "Set the player volume and optionally remember it on this device.", `${toggleControl("rememberVolume", "Remember volume") }<label class="setting-range"><span>Default volume</span><input type="range" min="0" max="1" step=".01" value="${settingsState.defaultVolume}" data-setting="defaultVolume"></label>`),
+        ...(isAndroidPlatform ? [settingCard("Audio", "Android audio path", "Direct playback avoids Web Audio processing and its extra resampling. Android and device hardware may still resample; EQ, Sound FX, and Timed mix require processed playback.", toggleControl("androidDirectPlayback", "High-quality direct playback"))] : []),
         settingCard("Audio", "AutoMix", "A short fade at track boundaries avoids abrupt transitions. True gapless playback depends on the selected audio files and browser.", `${toggleControl("timedMix", "Timed mix")}`),
         settingCard("Audio", "Equalizer & Sound FX", "10-band Web Audio equalizer with live frequency-response curve and sound-processing controls.", `<div id="eq-card-host"></div><span class="setting-search-terms">${eqPresetNames.join(" ")} 31 Hz 63 Hz 125 Hz 250 Hz 500 Hz 1 kHz 2 kHz 4 kHz 8 kHz 16 kHz Flat (0 dB) +2 dB Bass +2 dB Treble Double-click band to zero Master on off</span>`),
         settingCard("Downloads", "Offline", "Download lyrics sidecars and choose how MusicHeaven organizes files saved through supported browser features.", `${toggleControl("downloadLyrics", "Download lyrics", "Save synced lyrics as .lrc when available.")}<div class="setting-location"><span><strong>Save location</strong><small id="download-location-label">${settingsState.downloadLocation}</small></span><button type="button" class="setting-button" data-action="choose-download-location">Change</button></div><label class="setting-select"><span>Folder layout</span><select data-setting="folderLayout"><option${settingsState.folderLayout === "Flat" ? " selected" : ""}>Flat</option><option${settingsState.folderLayout === "Artist" ? " selected" : ""}>Artist</option><option${settingsState.folderLayout === "Album" ? " selected" : ""}>Album</option></select></label><button type="button" class="setting-button" data-action="reorganize-downloads">Reorganize existing downloads</button>`),
@@ -1153,8 +1159,47 @@
       document.body.classList.remove("settings-open");
     }
 
+    function enableAndroidAudioProcessing() {
+      if (!isAndroidPlatform || !settingsState.androidDirectPlayback) return;
+      settingsState.androidDirectPlayback = false;
+      const directPlaybackToggle = document.querySelector('[data-setting="androidDirectPlayback"]');
+      if (directPlaybackToggle) directPlaybackToggle.checked = false;
+      connectAudio();
+      if (audioContext && audioContext.state === "suspended") {
+        void audioContext.resume().catch((error) => {
+          console.error("Audio processing could not be resumed:", error);
+          showToast("Audio effects could not be started.");
+        });
+      }
+      showToast("Audio effects enabled. Android may resample processed playback.");
+    }
+
     function updateSetting(key, value) {
       settingsState[key] = value;
+      if (isAndroidPlatform && value && ["equalizerEnabled", "clarityEnabled", "timedMix"].includes(key)) {
+        enableAndroidAudioProcessing();
+      }
+      if (key === "androidDirectPlayback" && isAndroidPlatform) {
+        if (value && audioSource) {
+          showToast("Direct playback will take effect after restarting MusicHeaven.");
+        } else if (!value) {
+          connectAudio();
+          if (audioContext && audioContext.state === "suspended") {
+            void audioContext.resume().catch((error) => {
+              console.error("Audio processing could not be resumed:", error);
+              showToast("Audio effects could not be started.");
+            });
+          }
+        } else {
+          settingsState.equalizerEnabled = false;
+          settingsState.clarityEnabled = false;
+          settingsState.timedMix = false;
+          setEqEnabled(false);
+          setClarityEnabled(false);
+          const timedMixToggle = document.querySelector('[data-setting="timedMix"]');
+          if (timedMixToggle) timedMixToggle.checked = false;
+        }
+      }
       if (key === "backgroundPlayback" && value && !audio.paused && document.hidden) {
         showToast("Playback will continue while this tab is in the background.");
       }
@@ -2744,27 +2789,14 @@
       });
     }
 
-    function setupVisualizer() {
-      const bars = document.getElementById("wave-bars");
-      for (let i = 0; i < 76; i++) {
-        const bar = document.createElement("span");
-        bar.className = "wave-bar";
-        bar.style.height = `${5 + Math.random() * 20}px`;
-        bars.appendChild(bar);
-      }
-    }
-
     function connectAudio() {
-      if (audioSource) return;
+      if (audioSource || (isAndroidPlatform && settingsState.androidDirectPlayback)) return;
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) {
         showToast("Web Audio API is not supported in this browser.");
         return;
       }
       audioContext = new AudioContextClass();
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      frequencyData = new Uint8Array(analyser.frequencyBinCount);
       outputGain = audioContext.createGain();
       audioSource = audioContext.createMediaElementSource(audio);
       eqFilters = eqBands.map((band) => {
@@ -2790,29 +2822,10 @@
       const filterChain = [...eqFilters, ...clarityFilters];
       audioSource.connect(filterChain[0]);
       filterChain.forEach((filter, index) => {
-        filter.connect(index < filterChain.length - 1 ? filterChain[index + 1] : analyser);
+        filter.connect(index < filterChain.length - 1 ? filterChain[index + 1] : outputGain);
       });
-      analyser.connect(outputGain);
       outputGain.connect(audioContext.destination);
       applyEqValues();
-    }
-
-    function animateBars() {
-      const elements = document.querySelectorAll(".wave-bar");
-      if (analyser && !audio.paused) {
-        analyser.getByteFrequencyData(frequencyData);
-        elements.forEach((bar, i) => {
-          const bin = Math.floor(i * frequencyData.length / elements.length);
-          bar.style.height = `${Math.max(4, frequencyData[bin] * .38)}px`;
-        });
-      } else {
-        const time = performance.now() / 360;
-        elements.forEach((bar, i) => {
-          const wave = Math.sin(i * .42 + time) * .5 + Math.sin(i * .15 - time * .8) * .3;
-          bar.style.height = `${Math.max(4, 8 + (wave + .8) * 13)}px`;
-        });
-      }
-      requestAnimationFrame(animateBars);
     }
 
     playButton.addEventListener("click", () => {
@@ -3285,12 +3298,10 @@
     });
 
     setupEqualizer();
-    setupVisualizer();
     applyAppearanceSettings();
     document.body.classList.toggle("compact-library", settingsState.compactLibrary);
     document.body.classList.toggle("hide-library-metadata", !settingsState.showMetadata);
     logDiagnostic("Application initialized");
-    animateBars();
     setupMediaSession();
     setTrack(0, false);
     void restorePlaylist();
